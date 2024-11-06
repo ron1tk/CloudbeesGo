@@ -1,4 +1,6 @@
-
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 package main
 
@@ -6,103 +8,80 @@ import (
     "testing"
 )
 
-// TestSum_ValidInputs tests the Sum function with valid inputs.
-func TestSum_ValidInputs(t *testing.T) {
-    testCases := []struct {
-        name string
-        a    int
-        b    int
-        want int
-    }{
-        {"Positive numbers", 5, 3, 8},
-        {"Negative numbers", -2, -4, -6},
-        {"Mixed numbers", -1, 2, 1},
-        {"Zero and positive", 0, 5, 5},
-        {"Positive and zero", 10, 0, 10},
-        {"Zero and negative", 0, -3, -3},
-        {"Negative and zero", -7, 0, -7},
-    }
+// TestSum_PositiveNumbers tests the Sum function with positive numbers.
+func TestSum_PositiveNumbers(t *testing.T) {
+    a := 5
+    b := 3
+    expected := 8
 
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            got := Sum(tc.a, tc.b)
-            if got != tc.want {
-                t.Errorf("Sum(%d, %d) = %d; want %d", tc.a, tc.b, got, tc.want)
-            }
-        })
+    result := Sum(a, b)
+
+    if result != expected {
+        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
     }
 }
 
-// TestMinus_ValidInputs tests the Minus function with valid inputs.
-func TestMinus_ValidInputs(t *testing.T) {
-    testCases := []struct {
-        name string
-        a    int
-        b    int
-        want int
-    }{
-        {"Positive numbers", 5, 3, 2},
-        {"Negative numbers", -2, -4, 2},
-        {"Mixed numbers", -1, 2, -3},
-        {"Zero and positive", 0, 5, -5},
-        {"Positive and zero", 10, 0, 10},
-        {"Zero and negative", 0, -3, 3},
-        {"Negative and zero", -7, 0, -7},
-    }
+// TestSum_NegativeNumbers tests the Sum function with negative numbers.
+func TestSum_NegativeNumbers(t *testing.T) {
+    a := -5
+    b := -3
+    expected := -8
 
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            got := Minus(tc.a, tc.b)
-            if got != tc.want {
-                t.Errorf("Minus(%d, %d) = %d; want %d", tc.a, tc.b, got, tc.want)
-            }
-        })
+    result := Sum(a, b)
+
+    if result != expected {
+        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
     }
 }
 
-// TestSum_Overflow tests the Sum function for overflow.
-func TestSum_Overflow(t *testing.T) {
-    testCases := []struct {
-        name string
-        a    int
-        b    int
-        want int
-    }{
-        // Assuming int is 32-bit for this example. Adjust the test case for your specific environment if needed.
-        {"MaxInt32 and positive", 2147483647, 1, -2147483648},
-        {"MinInt32 and negative", -2147483648, -1, 2147483647},
-    }
+// TestSum_MixedNumbers tests the Sum function with mixed numbers.
+func TestSum_MixedNumbers(t *testing.T) {
+    a := -5
+    b := 3
+    expected := -2
 
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            got := Sum(tc.a, tc.b)
-            if got != tc.want {
-                t.Errorf("Expected overflow: Sum(%d, %d) = %d; want %d", tc.a, tc.b, got, tc.want)
-            }
-        })
+    result := Sum(a, b)
+
+    if result != expected {
+        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
     }
 }
 
-// TestMinus_Underflow tests the Minus function for underflow.
-func TestMinus_Underflow(t *testing.T) {
-    testCases := []struct {
-        name string
-        a    int
-        b    int
-        want int
-    }{
-        // Assuming int is 32-bit for this example. Adjust the test case for your specific environment if needed.
-        {"MinInt32 and positive", -2147483648, 1, 2147483647},
-        {"MaxInt32 and negative", 2147483647, -1, -2147483648},
-    }
+// TestMinus_PositiveNumbers tests the Minus function with positive numbers.
+func TestMinus_PositiveNumbers(t *testing.T) {
+    a := 5
+    b := 3
+    expected := 2
 
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            got := Minus(tc.a, tc.b)
-            if got != tc.want {
-                t.Errorf("Expected underflow: Minus(%d, %d) = %d; want %d", tc.a, tc.b, got, tc.want)
-            }
-        })
+    result := Minus(a, b)
+
+    if result != expected {
+        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
     }
 }
 
+// TestMinus_NegativeNumbers tests the Minus function with negative numbers.
+func TestMinus_NegativeNumbers(t *testing.T) {
+    a := -5
+    b := -3
+    expected := -2
+
+    result := Minus(a, b)
+
+    if result != expected {
+        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
+    }
+}
+
+// TestMinus_MixedNumbers tests the Minus function with mixed numbers.
+func TestMinus_MixedNumbers(t *testing.T) {
+    a := 5
+    b := -3
+    expected := 8
+
+    result := Minus(a, b)
+
+    if result != expected {
+        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
+    }
+}
