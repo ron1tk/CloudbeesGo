@@ -11,6 +11,8 @@ on:
       - '**.java'
       - '**.cpp'
       - '**.cs'
+      - '**.go'
+
 jobs:
   generate-tests:
     runs-on: ubuntu-latest
@@ -36,7 +38,7 @@ jobs:
       - name: Detect changed files
         id: changed-files
         run: |
-          changed_files=$(git diff --name-only HEAD^ HEAD | grep -E '\.(py|js|ts|java|cpp|cs)$' || true)
+          changed_files=$(git diff --name-only HEAD^ HEAD | grep -E '\.(py|js|ts|java|cpp|cs|go)$' || true)
           if [ -n "$changed_files" ]; then
             changed_files_sanitized=$(echo "$changed_files" | tr '\n' ' ')
             echo "CHANGED_FILES=$changed_files_sanitized" >> $GITHUB_ENV

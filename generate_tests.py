@@ -41,7 +41,8 @@ class TestGenerator:
           '.ts': 'TypeScript',
           '.java': 'Java',
           '.cpp':'C++',
-          '.cs': 'C#'
+          '.cs': 'C#',
+          '.go':'Go'
       }
       _, ext = os.path.splitext(file_name)
       return extensions.get(ext.lower(), 'Unknown')
@@ -54,7 +55,8 @@ class TestGenerator:
           'TypeScript': 'jest',
           'Java': 'JUnit',
           'C++': 'Google Test',
-          'C#': 'NUnit'
+          'C#': 'NUnit',
+          'Go':'testing'
       }
       return frameworks.get(language, 'unknown')
   
