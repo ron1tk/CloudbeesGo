@@ -1,3 +1,4 @@
+import subprocess
 import requests
 import os
 import sys
@@ -164,16 +165,91 @@ class TestGenerator:
                                                base_name = part.lower()  # Assuming file names are in lowercase
                                                for ext in ('.py', '.js', '.ts','.js'):
                                                    potential_file = f"{base_name}{ext}"
-                                               #print(potential_file + "<-- from regular \n")
-                                               stringPotentialFile = str(potential_file)
-                                               if Path(file_name).exists() and (stringPotentialFile in str(file_name)):
-                                                   related_test_files.append(file)
-                                                   break  # Found a related file, no need to check further extensions
+                                                   #print(potential_file + "<-- from regular \n")
+                                                   stringPotentialFile = str(potential_file)
+                                                   if Path(file_name).exists() and (stringPotentialFile in str(file_name)):
+                                                       related_test_files.append(file)
+                                                       break  # Found a related file, no need to check further extensions
        except Exception as e:
            logging.error(f"Error identifying related test files in {file_name}: {e}")
       #print("related FILES HERE "+ ', '.join(related_files) + "\n")
        limited_test_files = related_test_files[:1]# List
        return limited_test_files  # List
+  
+  def generate_coverage_report(self, test_file: Path, language: str):
+        """Generate a code coverage report and save it as a text file."""
+        report_file = test_file.parent / "coverage_report.txt"
+
+        try:
+            # Run tests with coverage based on language
+            if language == "Python":
+                subprocess.run(
+                    ["coverage", "run", str(test_file)],
+                    check=True
+                )
+                subprocess.run(
+                    ["coverage", "report", "-m", "--omit=*/site-packages/*"],
+                    stdout=open(report_file, "w"),
+                    check=True
+                )
+            elif language == "JavaScript":
+                # Example for JavaScript - replace with the specific coverage tool and command
+                subprocess.run(
+                    ["jest", "--coverage", "--config=path/to/jest.config.js"],
+                    stdout=open(report_file, "w"),
+                    check=True
+                )
+            # Add additional commands for other languages here
+
+            logging.info(f"Code coverage report saved to {report_file}")
+
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error generating coverage report for {test_file}: {e}")
+
+  def ensure_coverage_installed(self, language: str):
+        """
+        Ensures that the appropriate coverage tool for the given programming language is installed.
+        Logs messages for each step.
+        """
+        try:
+            if language.lower() == 'python':
+                # Check if 'coverage' is installed for Python
+                subprocess.check_call([sys.executable, '-m', 'pip', 'show', 'coverage'])
+                logging.info(f"Coverage tool for Python is already installed.")
+            elif language.lower() == 'javascript':
+                # Check if 'jest' coverage is available for JavaScript
+                subprocess.check_call(['npm', 'list', 'jest'])
+                logging.info(f"Coverage tool for JavaScript (jest) is already installed.")
+            elif language.lower() == 'java':
+                # Check if 'jacoco' is available for Java (typically part of the build process)
+                logging.info("Make sure Jacoco is configured in your Maven/Gradle build.")
+                # Optionally you can add a check for specific build tool (Maven/Gradle) commands here
+            elif language.lower() == 'ruby':
+                # Check if 'simplecov' is installed for Ruby
+                subprocess.check_call(['gem', 'list', 'simplecov'])
+                logging.info(f"Coverage tool for Ruby (simplecov) is already installed.")
+            else:
+                logging.warning(f"Coverage tool check is not configured for {language}. Please add it manually.")
+                return
+
+        except subprocess.CalledProcessError:
+            logging.error(f"Coverage tool for {language} is not installed. Installing...")
+
+            try:
+                if language.lower() == 'python':
+                    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'coverage'])
+                    logging.info(f"Coverage tool for Python has been installed.")
+                elif language.lower() == 'javascript':
+                    subprocess.check_call(['npm', 'install', 'jest'])
+                    logging.info(f"Coverage tool for JavaScript (jest) has been installed.")
+                elif language.lower() == 'ruby':
+                    subprocess.check_call(['gem', 'install', 'simplecov'])
+                    logging.info(f"Coverage tool for Ruby (simplecov) has been installed.")
+                else:
+                    logging.error(f"Could not install coverage tool for {language} automatically. Please install manually.")
+            except subprocess.CalledProcessError:
+                logging.error(f"Failed to install the coverage tool for {language}. Please install it manually.")
+
       
 
   def create_prompt(self, file_name: str, language: str) -> Optional[str]:
@@ -302,7 +378,7 @@ class TestGenerator:
       except RequestException as e:
           logging.error(f"API request failed: {e}")
           return None
-
+      
   def save_test_cases(self, file_name: str, test_cases: str, language: str):
       """Save generated test cases to appropriate directory structure."""
       tests_dir = Path('generated_tests')
@@ -315,9 +391,15 @@ class TestGenerator:
       extension = '.js' if language == 'JavaScript' else Path(file_name).suffix
       test_file = lang_dir / f"{base_name}{extension}"
 
+      header = (
+        "import sys\n"
+        "import os\n"
+        "sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), \"../..\")))\n\n"
+      )
+
       try:
           with open(test_file, 'w', encoding='utf-8') as f:
-              f.write(test_cases)
+              f.write(header + test_cases)
           logging.info(f"Test cases saved to {test_file}")
       except Exception as e:
           logging.error(f"Error saving test cases to {test_file}: {e}")
@@ -326,6 +408,7 @@ class TestGenerator:
           logging.info(f"File {test_file} exists with size {test_file.stat().st_size} bytes.")
       else:
           logging.error(f"File {test_file} was not created.")
+      return test_file
 
   def run(self):
       """Main execution method."""
@@ -351,6 +434,11 @@ class TestGenerator:
                    if test_cases:
                        test_cases = test_cases.replace("“", '"').replace("”", '"')
                        self.save_test_cases(file_name, test_cases, language)
+
+                       self.ensure_coverage_installed(language)
+
+                       test_file = self.save_test_cases(file_name, test_cases, language)
+                       self.generate_coverage_report(test_file, language)
                    else:
                        logging.error(f"Failed to generate test cases for {file_name}")
            except Exception as e:
@@ -360,10 +448,6 @@ if __name__ == '__main__':
   try:
       generator = TestGenerator()
       generator.run()
-      #download pytest
-      #test newly created file and save that coverage in a file
-      #send coverage file and test file to openAI requesting better tests
-      #rewrite that original test file with the better tests
   except Exception as e:
       logging.error(f"Fatal error: {e}")
       sys.exit(1)
