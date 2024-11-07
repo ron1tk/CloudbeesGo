@@ -1,4 +1,5 @@
 name: Automated Test Generation Pipeline
+
 on:
   push:
     branches:
@@ -13,7 +14,7 @@ on:
       - '**.cs'
       - '**.go'
 
-  jobs:
+jobs:
   generate-tests:
     runs-on: ubuntu-latest
     environment: testgeneration
@@ -21,20 +22,32 @@ on:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2  # Need at least 2 commits for comparison
-          token: ${{ secrets.PAT_TOKEN }}
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.8'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pytest
+          pip install requests pytest coverage
+
       - name: Create tests directory
         run: mkdir -p generated_tests
+
       - name: Detect changed files
         id: changed-files
         run: |
@@ -47,6 +60,7 @@ on:
             echo "No relevant source files changed"
             exit 0
           fi
+
       - name: Run test generation script
         if: env.CHANGED_FILES != ''
         env:
@@ -56,21 +70,25 @@ on:
         run: |
           echo "Generating tests for: ${{ env.CHANGED_FILES }}"
           python generate_tests.py "${{ env.CHANGED_FILES }}"
+
       - name: Create unique branch name
         if: env.CHANGED_FILES != ''
         run: |
           branch_name="test-gen-$(date +%Y%m%d-%H%M%S)"
           echo "BRANCH_NAME=$branch_name" >> $GITHUB_ENV
+
       - name: Configure Git
         if: env.CHANGED_FILES != ''
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Check for changes before commit
         if: env.CHANGED_FILES != ''
         run: |
           git status
           git diff --name-only
+
       - name: Commit and push changes
         if: env.CHANGED_FILES != ''
         env:
@@ -85,11 +103,12 @@ on:
           else
             echo "No changes to commit"
           fi
+
       - name: Create Pull Request
         if: env.CHANGES_PUSHED == '1'
         uses: repo-sync/pull-request@v2
         with:
-          github_token: ${{ secrets.PAT_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           pr_title: ":sparkles: New Test Cases Generated"
           pr_body: |
             ## :robot_face: Automated Test Generation
