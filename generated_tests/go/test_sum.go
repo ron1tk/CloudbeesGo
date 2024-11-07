@@ -8,80 +8,83 @@ import (
     "testing"
 )
 
-// TestSum_PositiveNumbers tests the Sum function with positive numbers.
-func TestSum_PositiveNumbers(t *testing.T) {
-    a := 5
-    b := 3
-    expected := 8
+// TestSum_ValidInputs tests the Sum function with valid inputs.
+func TestSum_ValidInputs(t *testing.T) {
+    t.Run("Adding positive numbers", func(t *testing.T) {
+        result := Sum(2, 3)
+        expected := 5
+        if result != expected {
+            t.Errorf("Sum(2, 3) = %d; want %d", result, expected)
+        }
+    })
 
-    result := Sum(a, b)
+    t.Run("Adding negative numbers", func(t *testing.T) {
+        result := Sum(-2, -3)
+        expected := -5
+        if result != expected {
+            t.Errorf("Sum(-2, -3) = %d; want %d", result, expected)
+        }
+    })
 
-    if result != expected {
-        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
-    }
+    t.Run("Adding positive and negative number", func(t *testing.T) {
+        result := Sum(-2, 3)
+        expected := 1
+        if result != expected {
+            t.Errorf("Sum(-2, 3) = %d; want %d", result, expected)
+        }
+    })
+
+    t.Run("Adding zeros", func(t *testing.T) {
+        result := Sum(0, 0)
+        expected := 0
+        if result != expected {
+            t.Errorf("Sum(0, 0) = %d; want %d", result, expected)
+        }
+    })
 }
 
-// TestSum_NegativeNumbers tests the Sum function with negative numbers.
-func TestSum_NegativeNumbers(t *testing.T) {
-    a := -5
-    b := -3
-    expected := -8
+// TestMinus_ValidInputs tests the Minus function with valid inputs.
+func TestMinus_ValidInputs(t *testing.T) {
+    t.Run("Subtracting positive numbers", func(t *testing.T) {
+        result := Minus(5, 3)
+        expected := 2
+        if result != expected {
+            t.Errorf("Minus(5, 3) = %d; want %d", result, expected)
+        }
+    })
 
-    result := Sum(a, b)
+    t.Run("Subtracting negative numbers", func(t *testing.T) {
+        result := Minus(-3, -2)
+        expected := -1
+        if result != expected {
+            t.Errorf("Minus(-3, -2) = %d; want %d", result, expected)
+        }
+    })
 
-    if result != expected {
-        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
-    }
+    t.Run("Subtracting with negative result", func(t *testing.T) {
+        result := Minus(2, 5)
+        expected := -3
+        if result != expected {
+            t.Errorf("Minus(2, 5) = %d; want %d", result, expected)
+        }
+    })
+
+    t.Run("Subtracting from zero", func(t *testing.T) {
+        result := Minus(0, 5)
+        expected := -5
+        if result != expected {
+            t.Errorf("Minus(0, 5) = %d; want %d", result, expected)
+        }
+    })
+
+    t.Run("Subtracting zero", func(t *testing.T) {
+        result := Minus(5, 0)
+        expected := 5
+        if result != expected {
+            t.Errorf("Minus(5, 0) = %d; want %d", result, expected)
+        }
+    })
 }
 
-// TestSum_MixedNumbers tests the Sum function with mixed numbers.
-func TestSum_MixedNumbers(t *testing.T) {
-    a := -5
-    b := 3
-    expected := -2
-
-    result := Sum(a, b)
-
-    if result != expected {
-        t.Errorf("Sum(%d, %d) = %d; want %d", a, b, result, expected)
-    }
-}
-
-// TestMinus_PositiveNumbers tests the Minus function with positive numbers.
-func TestMinus_PositiveNumbers(t *testing.T) {
-    a := 5
-    b := 3
-    expected := 2
-
-    result := Minus(a, b)
-
-    if result != expected {
-        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
-    }
-}
-
-// TestMinus_NegativeNumbers tests the Minus function with negative numbers.
-func TestMinus_NegativeNumbers(t *testing.T) {
-    a := -5
-    b := -3
-    expected := -2
-
-    result := Minus(a, b)
-
-    if result != expected {
-        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
-    }
-}
-
-// TestMinus_MixedNumbers tests the Minus function with mixed numbers.
-func TestMinus_MixedNumbers(t *testing.T) {
-    a := 5
-    b := -3
-    expected := 8
-
-    result := Minus(a, b)
-
-    if result != expected {
-        t.Errorf("Minus(%d, %d) = %d; want %d", a, b, result, expected)
-    }
-}
+// This set of tests ensures that for both Sum and Minus functions, all significant paths are covered.
+// There's no setup or teardown needed for these tests, and there are no external dependencies to mock.
