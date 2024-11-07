@@ -418,7 +418,7 @@ class TestGenerator:
           return
 
       for file_name in changed_files:
-          if (file_name!="generate_tests.py"):
+          if (file_name!="latest=generate_tests.py"):
            try:
                language = self.detect_language(file_name)
                if language == 'Unknown':
