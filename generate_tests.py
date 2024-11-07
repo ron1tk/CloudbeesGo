@@ -177,34 +177,45 @@ class TestGenerator:
        return limited_test_files  # List
   
   def generate_coverage_report(self, test_file: Path, language: str):
-        """Generate a code coverage report and save it as a text file."""
-        report_file = test_file.parent / "coverage_report.txt"
+    """Generate a code coverage report and save it as a text file."""
+    report_file = test_file.parent / "coverage_report.txt"
 
-        try:
-            # Run tests with coverage based on language
-            if language == "Python":
-                subprocess.run(
-                    ["coverage", "run", str(test_file)],
-                    check=True
-                )
-                subprocess.run(
-                    ["coverage", "report", "-m", "--omit=*/site-packages/*"],
-                    stdout=open(report_file, "w"),
-                    check=True
-                )
-            elif language == "JavaScript":
-                # Example for JavaScript - replace with the specific coverage tool and command
-                subprocess.run(
-                    ["jest", "--coverage", "--config=path/to/jest.config.js"],
-                    stdout=open(report_file, "w"),
-                    check=True
-                )
-            # Add additional commands for other languages here
+    try:
+        # Run tests with coverage based on language
+        if language == "Python":
+            subprocess.run(
+                ["coverage", "run", str(test_file)],
+                check=True
+            )
+            subprocess.run(
+                ["coverage", "report", "-m", "--omit=*/site-packages/*"],
+                stdout=open(report_file, "w"),
+                check=True
+            )
+        elif language == "JavaScript":
+            subprocess.run(
+                ["npx", "jest", "--coverage", "--config=path/to/jest.config.js"],
+                stdout=open(report_file, "w"),
+                check=True
+            )
+        elif language == "Go":
+            # Assuming all Go test files are in the same directory and you want to run all tests in that directory
+            subprocess.run(
+                ["go", "test", "./...", "-coverprofile", str(report_file.with_suffix('.out'))],
+                cwd=test_file.parent,  # Ensure that the cwd is set correctly to where the Go files are
+                check=True
+            )
+            # Convert coverprofile to human-readable format
+            subprocess.run(
+                ["go", "tool", "cover", "-html", str(report_file.with_suffix('.out')), "-o", str(report_file)],
+                check=True
+            )
+        # Add additional commands for other languages here
+        logging.info(f"Code coverage report saved to {report_file}")
 
-            logging.info(f"Code coverage report saved to {report_file}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error generating coverage report for {test_file}: {e}")
 
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Error generating coverage report for {test_file}: {e}")
 
   def ensure_coverage_installed(self, language: str):
         """
