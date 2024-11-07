@@ -22,38 +22,40 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+
     steps:
-      # Checkout the repository
-      - uses: actions/checkout@v4
+      # 1. Checkout the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2  # Need at least 2 commits for comparison
           token: ${{ secrets.PAT_TOKEN }}
-      
-      # Set up Python environment
+
+      # 2. Set up Python environment
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.8'
-      
-      # Set up Go environment
+
+      # 3. Set up Go environment
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.20'  # Specify your desired Go version
 
-      # Install Python dependencies
-      - name: Install Python dependencies
+      # 4. Install Python dependencies
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests pytest
 
-      # Tidy Go modules
+      # 5. Tidy Go modules
       - name: Tidy Go Modules
         run: |
           go mod tidy
-      
-      # Detect changed files
-      - name: Detect changed files
+
+      # 6. Detect changed files
+      - name: Detect Changed Files
         id: changed-files
         run: |
           changed_files=$(git diff --name-only HEAD^ HEAD | grep -E '\.(py|js|ts|java|cpp|cs|go)$' || true)
@@ -65,9 +67,9 @@ jobs:
             echo "No relevant source files changed"
             exit 0
           fi
-      
-      # Run the test generation script
-      - name: Run test generation script
+
+      # 7. Run the Test Generation Script
+      - name: Run Test Generation Script
         if: env.CHANGED_FILES != ''
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -77,8 +79,8 @@ jobs:
           for file in ${{ env.CHANGED_FILES }}; do
             python generate_tests.py "$file"
           done
-      
-      # Format Generated Go Test Files
+
+      # 8. Format Generated Go Test Files
       - name: Format Generated Go Test Files
         if: env.CHANGED_FILES != ''
         run: |
@@ -93,8 +95,8 @@ jobs:
               fi
             fi
           done
-      
-      # Validate Go Test Files
+
+      # 9. Validate Go Test Files
       - name: Validate Go Test Files
         if: env.CHANGED_FILES != ''
         run: |
@@ -109,8 +111,8 @@ jobs:
               fi
             fi
           done
-      
-      # Generate Coverage Report for Go
+
+      # 10. Generate Coverage Report for Go
       - name: Generate Coverage Report for Go
         if: env.CHANGED_FILES != '' && contains(env.CHANGED_FILES, '.go')
         run: |
@@ -119,8 +121,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: "gpt-4-turbo-preview"
           OPENAI_MAX_TOKENS: "2000"
-      
-      # Display Generated Go Test File Contents (Optional)
+
+      # 11. Display Generated Go Test File Contents (Optional)
       - name: Display Generated Go Test Files
         if: env.CHANGED_FILES != ''
         run: |
@@ -135,30 +137,30 @@ jobs:
               fi
             fi
           done
-      
-      # Create a unique branch name for the generated tests
-      - name: Create unique branch name
+
+      # 12. Create a Unique Branch Name for the Generated Tests
+      - name: Create Unique Branch Name
         if: env.CHANGED_FILES != ''
         run: |
           branch_name="test-gen-$(date +%Y%m%d-%H%M%S)"
           echo "BRANCH_NAME=$branch_name" >> $GITHUB_ENV
-      
-      # Configure Git with a user for committing
+
+      # 13. Configure Git with a User for Committing
       - name: Configure Git
         if: env.CHANGED_FILES != ''
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-      
-      # Check for changes before committing
-      - name: Check for changes before commit
+
+      # 14. Check for Changes Before Committing
+      - name: Check for Changes Before Commit
         if: env.CHANGED_FILES != ''
         run: |
           git status
           git diff --name-only
-      
-      # Commit and push changes
-      - name: Commit and push changes
+
+      # 15. Commit and Push Changes
+      - name: Commit and Push Changes
         if: env.CHANGED_FILES != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -172,8 +174,8 @@ jobs:
           else
             echo "No changes to commit"
           fi
-      
-      # Upload Coverage Reports as Artifacts
+
+      # 16. Upload Coverage Reports as Artifacts
       - name: Upload Coverage Reports
         if: env.CHANGED_FILES != ''
         uses: actions/upload-artifact@v3
@@ -182,8 +184,8 @@ jobs:
           path: |
             coverage_report.html
             coverage_report.out
-      
-      # Create a Pull Request with the Generated Tests
+
+      # 17. Create a Pull Request with the Generated Tests
       - name: Create Pull Request
         if: env.CHANGES_PUSHED == '1'
         uses: repo-sync/pull-request@v2
@@ -195,7 +197,7 @@ jobs:
             Generated test cases for the following files:
             
             ${{ env.CHANGED_FILES }}
-    
+  
             Please review these generated tests for:
             - Correctness
             - Coverage
