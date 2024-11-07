@@ -48,6 +48,12 @@ jobs:
       - name: Create tests directory
         run: mkdir -p generated_tests
       
+      - name: Clean existing Go test files
+        if: env.CHANGED_FILES != ''
+        run: |
+          find generated_tests/go/ -type f -name '*_test.go' -delete
+          find generated_tests/go/ -type f -name 'test_*.go' -delete
+      
       - name: Detect changed files
         id: changed-files
         run: |
@@ -70,6 +76,12 @@ jobs:
         run: |
           echo "Generating tests for: ${{ env.CHANGED_FILES }}"
           python generate_tests.py "${{ env.CHANGED_FILES }}"
+      
+      - name: Display Generated Go Test File
+        if: env.CHANGED_FILES != ''
+        run: |
+          echo "Contents of generated_tests/go/sum_test.go:"
+          head -n 5 generated_tests/go/sum_test.go
       
       - name: Create unique branch name
         if: env.CHANGED_FILES != ''
@@ -122,9 +134,9 @@ jobs:
           pr_body: |
             ## :robot_face: Automated Test Generation
             Generated test cases for the following files:
-            ```
-            ${{ env.CHANGED_FILES }}
-            ```
+            
+${{ env.CHANGED_FILES }}
+
             Please review these generated tests for:
             - Correctness
             - Coverage
