@@ -108,7 +108,7 @@ jobs:
         if: env.CHANGES_PUSHED == '1'
         uses: repo-sync/pull-request@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.PAT_TOKEN }}
           pr_title: ":sparkles: New Test Cases Generated"
           pr_body: |
             ## :robot_face: Automated Test Generation
