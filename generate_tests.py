@@ -368,22 +368,34 @@ Generate only the test code without any explanations or notes."""
         lang_dir = tests_dir / language.lower()
         lang_dir.mkdir(exist_ok=True)
         base_name = Path(file_name).stem
-        if not base_name.startswith("test_"):
-            base_name = f"test_{base_name}"
-        extension = '.js' if language == 'JavaScript' else Path(file_name).suffix
-        test_file = lang_dir / f"{base_name}{extension}"
+        extension = Path(file_name).suffix
 
+        # Adjust naming convention based on language
+        if language.lower() == 'javascript':
+            extension = '.js'
+            if not base_name.startswith("test_"):
+                base_name = f"test_{base_name}"
+        elif language.lower() == 'go':
+            extension = '.go'
+            if not base_name.endswith("_test"):
+                base_name = f"{base_name}_test"
+            # Optionally, add any Go-specific headers or setup code if necessary
+        elif language.lower() == 'python':
+            if not base_name.startswith("test_"):
+                base_name = f"test_{base_name}"
+
+        test_file = lang_dir / f"{base_name}{extension}"
         header = ""
 
         if language.lower() == 'python':
             header = (
                 "import sys\n"
                 "import os\n"
-                "sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), \"../..\")))\n\n"
+                "sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))\n\n"
             )
         elif language.lower() == 'go':
-            # Add necessary imports or setup for Go if needed
-            logging.info("Go-specific setup is not implemented yet.")
+            # Include any Go-specific setup code here, if necessary
+            header = "package test\n\n"
 
         try:
             with open(test_file, 'w', encoding='utf-8') as f:
@@ -391,6 +403,7 @@ Generate only the test code without any explanations or notes."""
             logging.info(f"Test cases saved to {test_file}")
         except Exception as e:
             logging.error(f"Error saving test cases to {test_file}: {e}")
+            return None
 
         if test_file.exists():
             logging.info(f"File {test_file} exists with size {test_file.stat().st_size} bytes.")
