@@ -178,8 +178,11 @@ class TestGenerator:
   
   def generate_coverage_report(self, test_file: Path, language: str):
     """Generate a code coverage report and save it as a text file."""
-    report_file = test_file.parent / "coverage_report.txt"
-
+    # Assuming the repository root is the current working directory
+    repo_root = Path.cwd()
+    report_out = test_file.parent / "coverage_report.out"
+    report_html = test_file.parent / "coverage_report.html"
+    
     try:
         # Run tests with coverage based on language
         if language == "Python":
@@ -189,32 +192,35 @@ class TestGenerator:
             )
             subprocess.run(
                 ["coverage", "report", "-m", "--omit=*/site-packages/*"],
-                stdout=open(report_file, "w"),
+                stdout=open(test_file.parent / "coverage_report.txt", "w"),
                 check=True
             )
         elif language == "JavaScript":
             subprocess.run(
                 ["npx", "jest", "--coverage", "--config=path/to/jest.config.js"],
-                stdout=open(report_file, "w"),
+                stdout=open(test_file.parent / "coverage_report.txt", "w"),
                 check=True
             )
         elif language == "Go":
-            # Assuming all Go test files are in the same directory and you want to run all tests in that directory
+            # Run 'go test' from the repository root
             subprocess.run(
-                ["go", "test", "./...", "-coverprofile", str(report_file.with_suffix('.out'))],
-                cwd=test_file.parent,  # Ensure that the cwd is set correctly to where the Go files are
+                ["go", "test", "./...", "-coverprofile", str(report_out)],
+                cwd=repo_root,  # Run from repo root
                 check=True
             )
-            # Convert coverprofile to human-readable format
+            # Convert coverprofile to human-readable HTML format
             subprocess.run(
-                ["go", "tool", "cover", "-html", str(report_file.with_suffix('.out')), "-o", str(report_file)],
+                ["go", "tool", "cover", "-html", str(report_out), "-o", str(report_html)],
                 check=True
             )
+            # Optionally, save the coverage report path in environment or log
+            logging.info(f"HTML coverage report generated at {report_html}")
         # Add additional commands for other languages here
-        logging.info(f"Code coverage report saved to {report_file}")
-
+        logging.info(f"Code coverage report saved to {report_html if language == 'Go' else report_out}")
+    
     except subprocess.CalledProcessError as e:
         logging.error(f"Error generating coverage report for {test_file}: {e}")
+
 
 
   def ensure_coverage_installed(self, language: str):
@@ -391,35 +397,30 @@ class TestGenerator:
           return None
       
   def save_test_cases(self, file_name: str, test_cases: str, language: str):
-      """Save generated test cases to appropriate directory structure."""
-      tests_dir = Path('generated_tests')
-      tests_dir.mkdir(exist_ok=True)
-      lang_dir = tests_dir / language.lower()
-      lang_dir.mkdir(exist_ok=True)
-      base_name = Path(file_name).stem
-      if not base_name.startswith("test_"):
-          base_name = f"test_{base_name}"
-      extension = '.js' if language == 'JavaScript' else Path(file_name).suffix
-      test_file = lang_dir / f"{base_name}{extension}"
+    """Save generated test cases to appropriate directory structure."""
+    tests_dir = Path('generated_tests')
+    tests_dir.mkdir(exist_ok=True)
+    lang_dir = tests_dir / language.lower()
+    lang_dir.mkdir(exist_ok=True)
+    base_name = Path(file_name).stem
+    if not base_name.endswith("_test"):
+        base_name = f"{base_name}_test"  # Ensure the test file ends with _test
+    extension = '.go'  # For Go, ensure the extension is .go
+    test_file = lang_dir / f"{base_name}{extension}"
 
-      header = (
-        "import sys\n"
-        "import os\n"
-        "sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), \"../..\")))\n\n"
-      )
+    try:
+        with open(test_file, 'w', encoding='utf-8') as f:
+            f.write(test_cases)
+        logging.info(f"Test cases saved to {test_file}")
+    except Exception as e:
+        logging.error(f"Error saving test cases to {test_file}: {e}")
 
-      try:
-          with open(test_file, 'w', encoding='utf-8') as f:
-              f.write(header + test_cases)
-          logging.info(f"Test cases saved to {test_file}")
-      except Exception as e:
-          logging.error(f"Error saving test cases to {test_file}: {e}")
+    if test_file.exists():
+        logging.info(f"File {test_file} exists with size {test_file.stat().st_size} bytes.")
+    else:
+        logging.error(f"File {test_file} was not created.")
+    return test_file
 
-      if test_file.exists():
-          logging.info(f"File {test_file} exists with size {test_file.stat().st_size} bytes.")
-      else:
-          logging.error(f"File {test_file} was not created.")
-      return test_file
 
   def run(self):
       """Main execution method."""
