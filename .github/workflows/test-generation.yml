@@ -135,7 +135,7 @@ jobs:
             ## :robot_face: Automated Test Generation
             Generated test cases for the following files:
             
-${{ env.CHANGED_FILES }}
+            ${{ env.CHANGED_FILES }}
 
             Please review these generated tests for:
             - Correctness
