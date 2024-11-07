@@ -5,86 +5,85 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 package main
 
 import (
+    "math"
     "testing"
 )
 
-// TestSum_PositiveNumbers tests the Sum function with positive numbers.
-func TestSum_PositiveNumbers(t *testing.T) {
-    result := Sum(5, 3)
-    expected := 8
+// TestSum_LargeNumbers tests the Sum function with large numbers.
+func TestSum_LargeNumbers(t *testing.T) {
+    result := Sum(1000000, 500000)
+    expected := 1500000
     if result != expected {
-        t.Errorf("Sum(5, 3) = %d; want %d", result, expected)
+        t.Errorf("Sum(1000000, 500000) = %d; want %d", result, expected)
     }
 }
 
-// TestSum_NegativeNumbers tests the Sum function with negative numbers.
-func TestSum_NegativeNumbers(t *testing.T) {
-    result := Sum(-5, -3)
-    expected := -8
+// TestSum_MaxIntOverflow tests the Sum function for integer overflow.
+func TestSum_MaxIntOverflow(t *testing.T) {
+    result := Sum(math.MaxInt32, 1)
+    expected := math.MinInt32 // Expect overflow to wrap around in Go
     if result != expected {
-        t.Errorf("Sum(-5, -3) = %d; want %d", result, expected)
+        t.Errorf("Sum(MaxInt32, 1) = %d; want %d", result, expected)
     }
 }
 
-// TestSum_PositiveAndNegativeNumbers tests the Sum function with both positive and negative numbers.
-func TestSum_PositiveAndNegativeNumbers(t *testing.T) {
-    result := Sum(5, -3)
-    expected := 2
+// TestSum_MinIntUnderflow tests the Sum function for integer underflow.
+func TestSum_MinIntUnderflow(t *testing.T) {
+    result := Sum(math.MinInt32, -1)
+    expected := math.MaxInt32 // Expect underflow to wrap around in Go
     if result != expected {
-        t.Errorf("Sum(5, -3) = %d; want %d", result, expected)
+        t.Errorf("Sum(MinInt32, -1) = %d; want %d", result, expected)
     }
 }
 
-// TestSum_Zero tests the Sum function with zero.
-func TestSum_Zero(t *testing.T) {
-    result := Sum(0, 0)
+// TestMinus_MinIntUnderflow tests the Minus function for integer underflow.
+func TestMinus_MinIntUnderflow(t *testing.T) {
+    result := Minus(math.MinInt32, 1)
+    expected := math.MaxInt32 // Expect underflow to wrap around in Go
+    if result != expected {
+        t.Errorf("Minus(MinInt32, 1) = %d; want %d", result, expected)
+    }
+}
+
+// TestMinus_MaxIntOverflow tests the Minus function for integer overflow.
+func TestMinus_MaxIntOverflow(t *testing.T) {
+    result := Minus(math.MaxInt32, -1)
+    expected := math.MinInt32 // Expect overflow to wrap around in Go
+    if result != expected {
+        t.Errorf("Minus(MaxInt32, -1) = %d; want %d", result, expected)
+    }
+}
+
+// TestMinus_VerySmallDifference tests the Minus function with numbers having very small difference.
+func TestMinus_VerySmallDifference(t *testing.T) {
+    result := Minus(1, 2)
+    expected := -1
+    if result != expected {
+        t.Errorf("Minus(1, 2) = %d; want %d", result, expected)
+    }
+}
+
+// TestMinus_SameNumbers tests the Minus function with both numbers being the same.
+func TestMinus_SameNumbers(t *testing.T) {
+    result := Minus(5, 5)
     expected := 0
     if result != expected {
-        t.Errorf("Sum(0, 0) = %d; want %d", result, expected)
+        t.Errorf("Minus(5, 5) = %d; want %d", result, expected)
     }
 }
 
-// TestMinus_PositiveNumbers tests the Minus function with positive numbers.
-func TestMinus_PositiveNumbers(t *testing.T) {
-    result := Minus(5, 3)
-    expected := 2
-    if result != expected {
-        t.Errorf("Minus(5, 3) = %d; want %d", result, expected)
-    }
+// TestSum_EmptyCases is a placeholder for any potential empty or nil cases if applicable.
+func TestSum_EmptyCases(t *testing.T) {
+    // Assuming Sum could eventually handle pointers or different types
+    // This is a placeholder for such tests
 }
 
-// TestMinus_NegativeNumbers tests the Minus function with negative numbers.
-func TestMinus_NegativeNumbers(t *testing.T) {
-    result := Minus(-5, -3)
-    expected := -2
-    if result != expected {
-        t.Errorf("Minus(-5, -3) = %d; want %d", result, expected)
-    }
+// TestMinus_EmptyCases is a placeholder for testing Minus function with empty or nil cases if applicable.
+func TestMinus_EmptyCases(t *testing.T) {
+    // Assuming Minus could eventually handle pointers or different types
+    // This is a placeholder for such tests
 }
 
-// TestMinus_PositiveAndNegativeNumbers tests the Minus function with both positive and negative numbers.
-func TestMinus_PositiveAndNegativeNumbers(t *testing.T) {
-    result := Minus(5, -3)
-    expected := 8
-    if result != expected {
-        t.Errorf("Minus(5, -3) = %d; want %d", result, expected)
-    }
-}
-
-// TestMinus_Zero tests the Minus function with zero.
-func TestMinus_Zero(t *testing.T) {
-    result := Minus(0, 0)
-    expected := 0
-    if result != expected {
-        t.Errorf("Minus(0, 0) = %d; want %d", result, expected)
-    }
-}
-
-// TestMinus_LargeNumbers tests the Minus function with large numbers.
-func TestMinus_LargeNumbers(t *testing.T) {
-    result := Minus(1000000, 500000)
-    expected := 500000
-    if result != expected {
-        t.Errorf("Minus(1000000, 500000) = %d; want %d", result, expected)
-    }
-}
+// Note: Since the provided functions Sum and Minus are simple and do not have external dependencies,
+// mocking is not applicable here. If future versions of these functions include calls to external services
+// or systems, mocking would then become relevant.
