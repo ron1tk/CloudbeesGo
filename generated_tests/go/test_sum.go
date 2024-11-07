@@ -2,10 +2,10 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-package main
 
 import (
     "testing"
+    "gocode"
 )
 
 // TestSum_PositiveNumbers tests the Sum function with positive numbers.
