@@ -1,4 +1,3 @@
-// generated_tests/go/prod_test.go
 package main
 
 import ("testing")
