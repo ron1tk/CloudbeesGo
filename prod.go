@@ -5,7 +5,4 @@ func Multiply(a int, b int) int {
 
 
 
-    
-
-
 }
