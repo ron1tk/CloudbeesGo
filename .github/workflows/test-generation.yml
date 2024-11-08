@@ -27,6 +27,20 @@ jobs:
         with:
           fetch-depth: 2  # Need at least 2 commits for comparison
 
+      # Setup for Go
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '^1.20'  # Adjust as per your project's Go version
+
+      - name: Cache Go modules
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -70,6 +84,29 @@ jobs:
         run: |
           echo "Generating tests for: ${{ env.CHANGED_FILES }}"
           python generate_tests.py "${{ env.CHANGED_FILES }}"
+      # Go test and coverage
+      - name: Run Go tests with coverage
+        run: |
+          go test ./... -coverprofile=coverage.out
+          go tool cover -html=coverage.out -o coverage.html
+
+      # Python test and coverage
+      - name: Run Python tests with coverage
+        run: |
+          pytest --cov=./ --cov-report=html --cov-report=xml
+
+      # Upload coverage reports as artifacts
+      - name: Upload Go coverage report
+        uses: actions/upload-artifact@v2
+        with:
+          name: go-coverage-report
+          path: coverage.html
+
+      - name: Upload Python coverage report
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-coverage-report
+          path: htmlcov/
 
       - name: Create unique branch name
         if: env.CHANGED_FILES != ''

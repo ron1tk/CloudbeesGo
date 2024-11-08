@@ -1,3 +1,8 @@
-func multiply(a int, b int) int {
+package main
+
+func Multiply(a int, b int) int {
     return a * b
+
+
+    
 }
