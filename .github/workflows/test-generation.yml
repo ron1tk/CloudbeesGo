@@ -97,13 +97,13 @@ jobs:
 
       # Upload coverage reports as artifacts
       - name: Upload Go coverage report
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: go-coverage-report
           path: coverage.html
 
       - name: Upload Python coverage report
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: python-coverage-report
           path: htmlcov/
