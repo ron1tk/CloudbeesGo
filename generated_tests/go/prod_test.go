@@ -1,130 +1,131 @@
 package cache
 
 import (
-    "testing"
-    "time"
+	"testing"
+	"time"
 )
 
-// TestCache_SetWithExpiration_Success tests setting an item with expiration successfully.
-func TestCache_SetWithExpiration_Success(t *testing.T) {
-    cache := NewCache(10*time.Millisecond, 0)
-    defer cache.StopJanitor()
-
-    key := "expiringKey"
-    value := "expiringValue"
-    expiration := 5 * time.Millisecond
-    cache.Set(key, value, expiration)
-
-    time.Sleep(6 * time.Millisecond) // Ensure the item has expired
-
-    _, err := cache.Get(key)
-    if !errors.Is(err, ErrItemExpired) {
-        t.Errorf("Expected error %v for expired item, got %v", ErrItemExpired, err)
-    }
+func setupCache(defaultDuration, cleanupInterval time.Duration, maxEntries int) *Cache {
+	return NewCache(cleanupInterval, defaultDuration, maxEntries)
 }
 
-// TestCache_SetAndGetConcurrently_Success tests concurrent setting and getting of items.
-func TestCache_SetAndGetConcurrently_Success(t *testing.T) {
-    cache := NewCache(100*time.Millisecond, 0)
-    defer cache.StopJanitor()
-
-    key := "concurrentKey"
-    value := "concurrentValue"
-
-    done := make(chan bool)
-
-    go func() {
-        cache.Set(key, value, 0)
-        done <- true
-    }()
-
-    time.Sleep(1 * time.Millisecond) // Give some time for the Set operation
-
-    <-done // Wait for the set operation to complete
-
-    got, err := cache.Get(key)
-    if err != nil {
-        t.Fatalf("Concurrent Get() unexpected error: %v", err)
-    }
-    if got != value {
-        t.Errorf("Concurrent Get() = %v, want %v", got, value)
-    }
+func TestNewCache(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 100)
+	if cache == nil {
+		t.Errorf("NewCache() returned nil")
+	}
 }
 
-// TestCache_ReplaceExistingItem_Success tests replacing an existing item.
-func TestCache_ReplaceExistingItem_Success(t *testing.T) {
-    cache := NewCache(100*time.Millisecond, 0)
-    defer cache.StopJanitor()
+func TestCache_SetAndGet(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
 
-    key := "key"
-    firstValue := "firstValue"
-    secondValue := "secondValue"
-    cache.Set(key, firstValue, 0)
-    cache.Set(key, secondValue, 0) // Replace
+	cache.Set("key1", "value1", 0)
+	val, err := cache.Get("key1")
 
-    got, err := cache.Get(key)
-    if err != nil {
-        t.Fatalf("Get() after replace unexpected error: %v", err)
-    }
-    if got != secondValue {
-        t.Errorf("Get() after replace = %v, want %v", got, secondValue)
-    }
+	if err != nil || val != "value1" {
+		t.Errorf("Set or Get failed. Err: %v, Val: %v", err, val)
+	}
+
+	// Test expiration
+	cache.Set("keyExpire", "valueExpire", 1*time.Nanosecond)
+	time.Sleep(2 * time.Nanosecond)
+	_, err = cache.Get("keyExpire")
+
+	if err != ErrItemExpired {
+		t.Errorf("Expected ErrItemExpired, got: %v", err)
+	}
+
+	// Test non-existing key
+	_, err = cache.Get("nonExistingKey")
+	if err != ErrItemNotFound {
+		t.Errorf("Expected ErrItemNotFound, got: %v", err)
+	}
 }
 
-// TestCache_DeleteNonexistent_Success tests deleting a nonexistent item.
-func TestCache_DeleteNonexistent_Success(t *testing.T) {
-    cache := NewCache(100*time.Millisecond, 0)
-    defer cache.StopJanitor()
+func TestCache_Update(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
 
-    nonexistentKey := "nonexistentKey"
-    cache.Delete(nonexistentKey) // Should not panic or error
+	err := cache.Update("key1", "newValue", 0)
+	if err != nil {
+		t.Errorf("Update failed. Err: %v", err)
+	}
 
-    _, err := cache.Get(nonexistentKey)
-    if !errors.Is(err, ErrItemNotFound) {
-        t.Errorf("Delete() nonexistent item, expected %v, got %v", ErrItemNotFound, err)
-    }
+	val, _ := cache.Get("key1")
+	if val != "newValue" {
+		t.Errorf("Update did not change the value. Expected newValue, got: %v", val)
+	}
+
+	err = cache.Update("nonExistingKey", "value", 0)
+	if err != ErrItemNotFound {
+		t.Errorf("Expected ErrItemNotFound for non-existing key update, got: %v", err)
+	}
 }
 
-// TestCache_MultipleOperations_Success tests multiple operations performed on the cache.
-func TestCache_MultipleOperations_Success(t *testing.T) {
-    cache := NewCache(100*time.Millisecond, 0)
-    defer cache.StopJanitor()
+func TestCache_Delete(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
 
-    key1 := "key1"
-    value1 := "value1"
-    key2 := "key2"
-    value2 := "value2"
+	cache.Delete("key1")
+	_, err := cache.Get("key1")
 
-    cache.Set(key1, value1, 0)
-    cache.Set(key2, value2, 0)
-
-    cache.Delete(key1)
-
-    _, err := cache.Get(key1)
-    if !errors.Is(err, ErrItemNotFound) {
-        t.Errorf("Expected %v error for key1, got %v", ErrItemNotFound, err)
-    }
-
-    got, err := cache.Get(key2)
-    if err != nil {
-        t.Fatalf("Unexpected error for key2: %v", err)
-    }
-    if got != value2 {
-        t.Errorf("Expected value2 for key2, got %v", got)
-    }
+	if err != ErrItemNotFound {
+		t.Errorf("Delete did not remove the item. Err: %v", err)
+	}
 }
 
-// TestCache_Clear_Success tests clearing the cache.
-func TestCache_Clear_Success(t *testing.T) {
-    cache := NewCache(100*time.Millisecond, 0)
-    defer cache.StopJanitor()
+func TestCache_Exists(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
 
-    cache.Set("key1", "value1", 0)
-    cache.Set("key2", "value2", 0)
+	if !cache.Exists("key1") {
+		t.Errorf("Exists reported false for existing key")
+	}
 
-    cache.Clear()
+	if cache.Exists("nonExistingKey") {
+		t.Errorf("Exists reported true for non-existing key")
+	}
+}
 
-    if len(cache.items) != 0 {
-        t.Errorf("Clear() failed, expected cache to be empty, got %d items", len(cache.items))
-    }
+func TestCache_Clear(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
+	cache.Set("key2", "value2", 0)
+
+	cache.Clear()
+
+	if len(cache.Keys()) != 0 {
+		t.Errorf("Clear did not remove all items")
+	}
+}
+
+func TestCache_Keys(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
+	cache.Set("key2", "value2", 0)
+
+	keys := cache.Keys()
+	if len(keys) != 2 {
+		t.Errorf("Keys did not return correct number of keys. Expected 2, got: %d", len(keys))
+	}
+}
+
+func TestCache_Stats(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 10)
+	cache.Set("key1", "value1", 0)
+
+	stats := cache.Stats()
+	if stats.Items != 1 {
+		t.Errorf("Stats did not return correct items count. Expected 1, got: %d", stats.Items)
+	}
+}
+
+func TestCache_Eviction(t *testing.T) {
+	cache := setupCache(5*time.Minute, 1*time.Minute, 1) // maxEntries set to 1
+	cache.Set("key1", "value1", 0)
+	cache.Set("key2", "value2", 0) // This should cause key1 to be evicted
+
+	if cache.Exists("key1") {
+		t.Errorf("LRU eviction failed. 'key1' should have been evicted.")
+	}
 }
