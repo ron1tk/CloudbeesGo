@@ -6,6 +6,7 @@ import (
     "time"
 )
 
+
 // Item represents a single cache item.
 type Item struct {
     Value      interface{}
