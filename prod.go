@@ -95,6 +95,7 @@ func (j *janitor) Run(c *Cache) {
     }
 }
 
+
 // DeleteExpired removes all expired items from the cache.
 func (c *Cache) DeleteExpired() {
     now := time.Now().UnixNano()
