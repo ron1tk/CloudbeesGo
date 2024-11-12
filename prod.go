@@ -1,736 +1,675 @@
 package main
 
 import (
-	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"github.com/gorilla/mux"
 )
 
+// ---------------------- Models ----------------------
 
+// Book represents a book in the library
+type Book struct {
+	ID            int       `json:"id"`
+	Title         string    `json:"title"`
+	Author        string    `json:"author"`
+	PublishedYear int       `json:"published_year"`
+	ISBN          string    `json:"isbn"`
+	Available     bool      `json:"available"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
 
-// Constants for token generation and expiration
-const (
-	TokenLength    = 32
-	TokenExpiry    = time.Hour * 24
-	ServerPort     = "8000"
-	ContextUserKey = "user"
-)
-
-// User represents a user in the system.
+// User represents a library user
 type User struct {
-	ID           int    `json:"id"`
-	Username     string `json:"username"`
-	PasswordHash string `json:"-"`
-	Token        string `json:"token,omitempty"`
+	ID        int       `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	JoinedAt  time.Time `json:"joined_at"`
+	IsActive  bool      `json:"is_active"`
+	Borrowed  []int     `json:"borrowed_books"` // Slice of Book IDs
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Task represents a task with various attributes.
-type Task struct {
-	ID          int       `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Completed   bool      `json:"completed"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	OwnerID     int       `json:"owner_id"`
-}
+// ---------------------- In-Memory Store ----------------------
 
-// Response represents a standard API response.
-type Response struct {
-	Status  string      `json:"status"`
-	Message string      `json:"message,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-// InMemoryStore holds the users and tasks with mutexes for concurrency safety.
-type InMemoryStore struct {
-	Users      map[int]User
-	Tasks      map[int]Task
+type Store struct {
+	books      map[int]Book
+	users      map[int]User
+	bookMutex  sync.RWMutex
 	userMutex  sync.RWMutex
-	taskMutex  sync.RWMutex
-	userIDSeq  int
-	taskIDSeq  int
-	tokenStore map[string]int // token to user ID
-	tokenMux   sync.RWMutex
+	nextBookID int
+	nextUserID int
 }
 
-// NewStore initializes and returns a new InMemoryStore.
-func NewStore() *InMemoryStore {
-	return &InMemoryStore{
-		Users:      make(map[int]User),
-		Tasks:      make(map[int]Task),
-		tokenStore: make(map[string]int),
+// NewStore initializes the in-memory store
+func NewStore() *Store {
+	return &Store{
+		books:      make(map[int]Book),
+		users:      make(map[int]User),
+		nextBookID: 1,
+		nextUserID: 1,
 	}
 }
 
-// AddUser adds a new user to the store.
-func (s *InMemoryStore) AddUser(username, password string) (User, error) {
-	s.userMutex.Lock()
-	defer s.userMutex.Unlock()
+// ---------------------- Services ----------------------
 
-	// Check if username already exists
-	for _, user := range s.Users {
-		if user.Username == username {
-			return User{}, errors.New("username already exists")
-		}
-	}
-
-	// Hash the password
-	hashedPassword := HashPassword(password)
-
-	s.userIDSeq++
-	user := User{
-		ID:           s.userIDSeq,
-		Username:     username,
-		PasswordHash: hashedPassword,
-	}
-	s.Users[user.ID] = user
-	return user, nil
+// BookService handles book-related operations
+type BookService struct {
+	store *Store
 }
 
-// AuthenticateUser authenticates a user and returns the user if successful.
-func (s *InMemoryStore) AuthenticateUser(username, password string) (User, error) {
-	s.userMutex.RLock()
-	defer s.userMutex.RUnlock()
-
-	for _, user := range s.Users {
-		if user.Username == username {
-			if CheckPasswordHash(password, user.PasswordHash) {
-				return user, nil
-			}
-			return User{}, errors.New("invalid password")
-		}
-	}
-	return User{}, errors.New("user not found")
+// NewBookService creates a new BookService
+func NewBookService(store *Store) *BookService {
+	return &BookService{store: store}
 }
 
-// AddTask adds a new task to the store.
-func (s *InMemoryStore) AddTask(title, description string, ownerID int) Task {
-	s.taskMutex.Lock()
-	defer s.taskMutex.Unlock()
-
-	s.taskIDSeq++
-	now := time.Now()
-	task := Task{
-		ID:          s.taskIDSeq,
-		Title:       title,
-		Description: description,
-		Completed:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		OwnerID:     ownerID,
-	}
-	s.Tasks[task.ID] = task
-	return task
+// AddBook adds a new book to the store
+func (bs *BookService) AddBook(book Book) Book {
+	bs.store.bookMutex.Lock()
+	defer bs.store.bookMutex.Unlock()
+	book.ID = bs.store.nextBookID
+	bs.store.nextBookID++
+	book.Available = true
+	book.CreatedAt = time.Now()
+	book.UpdatedAt = time.Now()
+	bs.store.books[book.ID] = book
+	return book
 }
 
-// GetTask retrieves a task by ID.
-func (s *InMemoryStore) GetTask(taskID, ownerID int) (Task, error) {
-	s.taskMutex.RLock()
-	defer s.taskMutex.RUnlock()
-
-	task, exists := s.Tasks[taskID]
+// GetBook retrieves a book by ID
+func (bs *BookService) GetBook(id int) (Book, error) {
+	bs.store.bookMutex.RLock()
+	defer bs.store.bookMutex.RUnlock()
+	book, exists := bs.store.books[id]
 	if !exists {
-		return Task{}, errors.New("task not found")
+		return Book{}, errors.New("book not found")
 	}
-	if task.OwnerID != ownerID {
-		return Task{}, errors.New("unauthorized access to task")
-	}
-	return task, nil
+	return book, nil
 }
 
-// UpdateTask updates an existing task.
-func (s *InMemoryStore) UpdateTask(taskID, ownerID int, updated Task) (Task, error) {
-	s.taskMutex.Lock()
-	defer s.taskMutex.Unlock()
-
-	task, exists := s.Tasks[taskID]
+// UpdateBook updates an existing book
+func (bs *BookService) UpdateBook(id int, updated Book) (Book, error) {
+	bs.store.bookMutex.Lock()
+	defer bs.store.bookMutex.Unlock()
+	book, exists := bs.store.books[id]
 	if !exists {
-		return Task{}, errors.New("task not found")
+		return Book{}, errors.New("book not found")
 	}
-	if task.OwnerID != ownerID {
-		return Task{}, errors.New("unauthorized access to task")
-	}
-
-	// Update fields if provided
 	if updated.Title != "" {
-		task.Title = updated.Title
+		book.Title = updated.Title
 	}
-	if updated.Description != "" {
-		task.Description = updated.Description
+	if updated.Author != "" {
+		book.Author = updated.Author
 	}
-	task.Completed = updated.Completed
-	task.UpdatedAt = time.Now()
-
-	s.Tasks[taskID] = task
-	return task, nil
+	if updated.PublishedYear != 0 {
+		book.PublishedYear = updated.PublishedYear
+	}
+	if updated.ISBN != "" {
+		book.ISBN = updated.ISBN
+	}
+	book.UpdatedAt = time.Now()
+	bs.store.books[id] = book
+	return book, nil
 }
 
-// DeleteTask removes a task from the store.
-func (s *InMemoryStore) DeleteTask(taskID, ownerID int) error {
-	s.taskMutex.Lock()
-	defer s.taskMutex.Unlock()
-
-	task, exists := s.Tasks[taskID]
+// DeleteBook removes a book from the store
+func (bs *BookService) DeleteBook(id int) error {
+	bs.store.bookMutex.Lock()
+	defer bs.store.bookMutex.Unlock()
+	_, exists := bs.store.books[id]
 	if !exists {
-		return errors.New("task not found")
+		return errors.New("book not found")
 	}
-	if task.OwnerID != ownerID {
-		return errors.New("unauthorized access to task")
-	}
-
-	delete(s.Tasks, taskID)
+	delete(bs.store.books, id)
 	return nil
 }
 
-// GetAllTasks retrieves all tasks for a user.
-func (s *InMemoryStore) GetAllTasks(ownerID int) []Task {
-	s.taskMutex.RLock()
-	defer s.taskMutex.RUnlock()
+// ListBooks returns all books
+func (bs *BookService) ListBooks() []Book {
+	bs.store.bookMutex.RLock()
+	defer bs.store.bookMutex.RUnlock()
+	books := []Book{}
+	for _, book := range bs.store.books {
+		books = append(books, book)
+	}
+	return books
+}
 
-	tasks := []Task{}
-	for _, task := range s.Tasks {
-		if task.OwnerID == ownerID {
-			tasks = append(tasks, task)
+// UserService handles user-related operations
+type UserService struct {
+	store *Store
+}
+
+// NewUserService creates a new UserService
+func NewUserService(store *Store) *UserService {
+	return &UserService{store: store}
+}
+
+// AddUser adds a new user to the store
+func (us *UserService) AddUser(user User) User {
+	us.store.userMutex.Lock()
+	defer us.store.userMutex.Unlock()
+	user.ID = us.store.nextUserID
+	us.store.nextUserID++
+	user.IsActive = true
+	user.JoinedAt = time.Now()
+	user.CreatedAt = time.Now()
+	user.UpdatedAt = time.Now()
+	us.store.users[user.ID] = user
+	return user
+}
+
+// GetUser retrieves a user by ID
+func (us *UserService) GetUser(id int) (User, error) {
+	us.store.userMutex.RLock()
+	defer us.store.userMutex.RUnlock()
+	user, exists := us.store.users[id]
+	if !exists {
+		return User{}, errors.New("user not found")
+	}
+	return user, nil
+}
+
+// UpdateUser updates an existing user
+func (us *UserService) UpdateUser(id int, updated User) (User, error) {
+	us.store.userMutex.Lock()
+	defer us.store.userMutex.Unlock()
+	user, exists := us.store.users[id]
+	if !exists {
+		return User{}, errors.New("user not found")
+	}
+	if updated.Name != "" {
+		user.Name = updated.Name
+	}
+	if updated.Email != "" {
+		user.Email = updated.Email
+	}
+	user.IsActive = updated.IsActive
+	user.UpdatedAt = time.Now()
+	us.store.users[id] = user
+	return user, nil
+}
+
+// DeleteUser removes a user from the store
+func (us *UserService) DeleteUser(id int) error {
+	us.store.userMutex.Lock()
+	defer us.store.userMutex.Unlock()
+	_, exists := us.store.users[id]
+	if !exists {
+		return errors.New("user not found")
+	}
+	delete(us.store.users, id)
+	return nil
+}
+
+// ListUsers returns all users
+func (us *UserService) ListUsers() []User {
+	us.store.userMutex.RLock()
+	defer us.store.userMutex.RUnlock()
+	users := []User{}
+	for _, user := range us.store.users {
+		users = append(users, user)
+	}
+	return users
+}
+
+// BorrowBook allows a user to borrow a book
+func (us *UserService) BorrowBook(userID, bookID int, bs *BookService) error {
+	us.store.userMutex.Lock()
+	defer us.store.userMutex.Unlock()
+
+	book, err := bs.GetBook(bookID)
+	if err != nil {
+		return err
+	}
+
+	if !book.Available {
+		return errors.New("book is not available")
+	}
+
+	user, exists := us.store.users[userID]
+	if !exists {
+		return errors.New("user not found")
+	}
+
+	// Check if user already borrowed the book
+	for _, bID := range user.Borrowed {
+		if bID == bookID {
+			return errors.New("user already borrowed this book")
 		}
 	}
-	return tasks
+
+	// Update book availability
+	book.Available = false
+	book.UpdatedAt = time.Now()
+	bs.store.bookMutex.Lock()
+	bs.store.books[bookID] = book
+	bs.store.bookMutex.Unlock()
+
+	// Update user's borrowed books
+	user.Borrowed = append(user.Borrowed, bookID)
+	user.UpdatedAt = time.Now()
+	us.store.users[userID] = user
+
+	return nil
 }
 
-// GenerateToken creates a secure random token.
-func GenerateToken() (string, error) {
-	b := make([]byte, TokenLength)
-	_, err := rand.Read(b)
+// ReturnBook allows a user to return a borrowed book
+func (us *UserService) ReturnBook(userID, bookID int, bs *BookService) error {
+	us.store.userMutex.Lock()
+	defer us.store.userMutex.Unlock()
+
+	user, exists := us.store.users[userID]
+	if !exists {
+		return errors.New("user not found")
+	}
+
+	// Check if user has borrowed the book
+	found := false
+	for i, bID := range user.Borrowed {
+		if bID == bookID {
+			// Remove the book from borrowed list
+			user.Borrowed = append(user.Borrowed[:i], user.Borrowed[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("user has not borrowed this book")
+	}
+
+	// Update user
+	user.UpdatedAt = time.Now()
+	us.store.users[userID] = user
+
+	// Update book availability
+	book, err := bs.GetBook(bookID)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return base64.URLEncoding.EncodeToString(b), nil
+	book.Available = true
+	book.UpdatedAt = time.Now()
+	bs.store.bookMutex.Lock()
+	bs.store.books[bookID] = book
+	bs.store.bookMutex.Unlock()
+
+	return nil
 }
 
-// HashPassword hashes the given password using SHA-256.
-// Note: In production, use a stronger hashing algorithm like bcrypt or Argon2.
-func HashPassword(password string) string {
-	hash := sha256.Sum256([]byte(password))
-	return base64.URLEncoding.EncodeToString(hash[:])
+// ---------------------- Handlers ----------------------
+
+// Handler struct contains services
+type Handler struct {
+	bookService *BookService
+	userService *UserService
 }
 
-// CheckPasswordHash compares a plaintext password with a hashed password.
-func CheckPasswordHash(password, hash string) bool {
-	return HashPassword(password) == hash
+// NewHandler creates a new Handler
+func NewHandler(bs *BookService, us *UserService) *Handler {
+	return &Handler{
+		bookService: bs,
+		userService: us,
+	}
 }
 
-// Claims represents the JWT claims.
-type Claims struct {
-	UserID int `json:"user_id"`
+// ServeHTTP implements http.Handler
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Simple routing based on URL path and method
+	path := r.URL.Path
+	method := r.Method
+
+	// Books endpoints
+	if strings.HasPrefix(path, "/books") {
+		h.handleBooks(w, r)
+		return
+	}
+
+	// Users endpoints
+	if strings.HasPrefix(path, "/users") {
+		h.handleUsers(w, r)
+		return
+	}
+
+	// Borrow book
+	if strings.HasPrefix(path, "/borrow") && method == http.MethodPost {
+		h.handleBorrow(w, r)
+		return
+	}
+
+	// Return book
+	if strings.HasPrefix(path, "/return") && method == http.MethodPost {
+		h.handleReturn(w, r)
+		return
+	}
+
+	// Not found
+	http.NotFound(w, r)
 }
 
-// GenerateJWT generates a JWT token for a user.
-func GenerateJWT(userID int) (string, error) {
-	token, err := GenerateToken()
+// ---------------------- Book Handlers ----------------------
+
+// handleBooks handles all /books endpoints
+func (h *Handler) handleBooks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.listBooks(w, r)
+	case http.MethodPost:
+		h.createBook(w, r)
+	case http.MethodPut:
+		h.updateBook(w, r)
+	case http.MethodDelete:
+		h.deleteBook(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// listBooks handles GET /books
+func (h *Handler) listBooks(w http.ResponseWriter, r *http.Request) {
+	books := h.bookService.ListBooks()
+	respondJSON(w, http.StatusOK, books)
+}
+
+// createBook handles POST /books
+func (h *Handler) createBook(w http.ResponseWriter, r *http.Request) {
+	var book Book
+	err := json.NewDecoder(r.Body).Decode(&book)
 	if err != nil {
-		return "", err
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
+		return
 	}
-	return token, nil
+	if book.Title == "" || book.Author == "" || book.ISBN == "" || book.PublishedYear == 0 {
+		respondError(w, http.StatusBadRequest, "Missing required fields")
+		return
+	}
+	created := h.bookService.AddBook(book)
+	respondJSON(w, http.StatusCreated, created)
 }
 
-// HandlerContext holds the application state.
-type HandlerContext struct {
-	Store *InMemoryStore
+// updateBook handles PUT /books?id={id}
+func (h *Handler) updateBook(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		respondError(w, http.StatusBadRequest, "Missing book ID")
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid book ID")
+		return
+	}
+	var book Book
+	err = json.NewDecoder(r.Body).Decode(&book)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	updated, err := h.bookService.UpdateBook(id, book)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, updated)
 }
 
-// RegisterHandler handles user registration.
-func (hc *HandlerContext) RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	type Request struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+// deleteBook handles DELETE /books?id={id}
+func (h *Handler) deleteBook(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		respondError(w, http.StatusBadRequest, "Missing book ID")
+		return
 	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid book ID")
+		return
+	}
+	err = h.bookService.DeleteBook(id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Book deleted"})
+}
 
-	var req Request
+// ---------------------- User Handlers ----------------------
+
+// handleUsers handles all /users endpoints
+func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.listUsers(w, r)
+	case http.MethodPost:
+		h.createUser(w, r)
+	case http.MethodPut:
+		h.updateUser(w, r)
+	case http.MethodDelete:
+		h.deleteUser(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// listUsers handles GET /users
+func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	users := h.userService.ListUsers()
+	respondJSON(w, http.StatusOK, users)
+}
+
+// createUser handles POST /users
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	var user User
+	err := json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	if user.Name == "" || user.Email == "" {
+		respondError(w, http.StatusBadRequest, "Missing required fields")
+		return
+	}
+	created := h.userService.AddUser(user)
+	respondJSON(w, http.StatusCreated, created)
+}
+
+// updateUser handles PUT /users?id={id}
+func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		respondError(w, http.StatusBadRequest, "Missing user ID")
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+	var user User
+	err = json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	updated, err := h.userService.UpdateUser(id, user)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, updated)
+}
+
+// deleteUser handles DELETE /users?id={id}
+func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		respondError(w, http.StatusBadRequest, "Missing user ID")
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+	err = h.userService.DeleteUser(id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "User deleted"})
+}
+
+// ---------------------- Borrow & Return Handlers ----------------------
+
+// handleBorrow handles POST /borrow
+func (h *Handler) handleBorrow(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int `json:"user_id"`
+		BookID int `json:"book_id"`
+	}
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid request payload",
-		})
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
-	if req.Username == "" || req.Password == "" {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Username and password are required",
-		})
+	if req.UserID == 0 || req.BookID == 0 {
+		respondError(w, http.StatusBadRequest, "Missing user_id or book_id")
 		return
 	}
-
-	user, err := hc.Store.AddUser(req.Username, req.Password)
+	err = h.userService.BorrowBook(req.UserID, req.BookID, h.bookService)
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: err.Error(),
-		})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	// Generate token
-	token, err := GenerateJWT(user.ID)
-	if err != nil {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not generate token",
-		})
-		return
-	}
-
-	// Store token
-	hc.Store.tokenMux.Lock()
-	hc.Store.tokenStore[token] = user.ID
-	hc.Store.tokenMux.Unlock()
-
-	user.Token = token
-
-	RespondJSON(w, http.StatusCreated, Response{
-		Status:  "success",
-		Message: "User registered successfully",
-		Data: map[string]interface{}{
-			"user_id": user.ID,
-			"token":   user.Token,
-		},
-	})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Book borrowed successfully"})
 }
 
-// LoginHandler handles user authentication.
-func (hc *HandlerContext) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	type Request struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+// handleReturn handles POST /return
+func (h *Handler) handleReturn(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID int `json:"user_id"`
+		BookID int `json:"book_id"`
 	}
-
-	var req Request
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid request payload",
-		})
+		respondError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
-	user, err := hc.Store.AuthenticateUser(req.Username, req.Password)
+	if req.UserID == 0 || req.BookID == 0 {
+		respondError(w, http.StatusBadRequest, "Missing user_id or book_id")
+		return
+	}
+	err = h.userService.ReturnBook(req.UserID, req.BookID, h.bookService)
 	if err != nil {
-		RespondJSON(w, http.StatusUnauthorized, Response{
-			Status:  "error",
-			Message: "Invalid username or password",
-		})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	// Generate new token
-	token, err := GenerateJWT(user.ID)
-	if err != nil {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not generate token",
-		})
-		return
-	}
-
-	// Store token
-	hc.Store.tokenMux.Lock()
-	hc.Store.tokenStore[token] = user.ID
-	hc.Store.tokenMux.Unlock()
-
-	user.Token = token
-
-	RespondJSON(w, http.StatusOK, Response{
-		Status:  "success",
-		Message: "Logged in successfully",
-		Data: map[string]interface{}{
-			"user_id": user.ID,
-			"token":   user.Token,
-		},
-	})
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Book returned successfully"})
 }
 
-// CreateTaskHandler handles the creation of a new task.
-func (hc *HandlerContext) CreateTaskHandler(w http.ResponseWriter, r *http.Request) {
-	type Request struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-	}
+// ---------------------- Utility Functions ----------------------
 
-	var req Request
-	err := json.NewDecoder(r.Body).Decode(&req)
+// respondJSON sends a JSON response
+func respondJSON(w http.ResponseWriter, status int, payload interface{}) {
+	response, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid request payload",
-		})
-		return
-	}
-
-	if req.Title == "" {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Title is required",
-		})
-		return
-	}
-
-	// Get user ID from context
-	userID, ok := r.Context().Value(ContextUserKey).(int)
-	if !ok {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not retrieve user from context",
-		})
-		return
-	}
-
-	task := hc.Store.AddTask(req.Title, req.Description, userID)
-
-	RespondJSON(w, http.StatusCreated, Response{
-		Status:  "success",
-		Message: "Task created successfully",
-		Data:    task,
-	})
-}
-
-// GetAllTasksHandler retrieves all tasks for the authenticated user.
-func (hc *HandlerContext) GetAllTasksHandler(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from context
-	userID, ok := r.Context().Value(ContextUserKey).(int)
-	if !ok {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not retrieve user from context",
-		})
-		return
-	}
-
-	tasks := hc.Store.GetAllTasks(userID)
-
-	RespondJSON(w, http.StatusOK, Response{
-		Status:  "success",
-		Message: "Tasks retrieved successfully",
-		Data:    tasks,
-	})
-}
-
-// GetTaskHandler retrieves a specific task by ID.
-func (hc *HandlerContext) GetTaskHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	taskIDStr, exists := vars["id"]
-	if !exists {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Task ID is required",
-		})
-		return
-	}
-
-	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid Task ID",
-		})
-		return
-	}
-
-	// Get user ID from context
-	userID, ok := r.Context().Value(ContextUserKey).(int)
-	if !ok {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not retrieve user from context",
-		})
-		return
-	}
-
-	task, err := hc.Store.GetTask(taskID, userID)
-	if err != nil {
-		RespondJSON(w, http.StatusNotFound, Response{
-			Status:  "error",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	RespondJSON(w, http.StatusOK, Response{
-		Status:  "success",
-		Message: "Task retrieved successfully",
-		Data:    task,
-	})
-}
-
-// UpdateTaskHandler updates an existing task.
-func (hc *HandlerContext) UpdateTaskHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	taskIDStr, exists := vars["id"]
-	if !exists {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Task ID is required",
-		})
-		return
-	}
-
-	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid Task ID",
-		})
-		return
-	}
-
-	type Request struct {
-		Title       string `json:"title,omitempty"`
-		Description string `json:"description,omitempty"`
-		Completed   bool   `json:"completed,omitempty"`
-	}
-
-	var req Request
-	err = json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid request payload",
-		})
-		return
-	}
-
-	// Get user ID from context
-	userID, ok := r.Context().Value(ContextUserKey).(int)
-	if !ok {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not retrieve user from context",
-		})
-		return
-	}
-
-	updatedTask := Task{
-		Title:       req.Title,
-		Description: req.Description,
-		Completed:   req.Completed,
-	}
-
-	task, err := hc.Store.UpdateTask(taskID, userID, updatedTask)
-	if err != nil {
-		RespondJSON(w, http.StatusNotFound, Response{
-			Status:  "error",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	RespondJSON(w, http.StatusOK, Response{
-		Status:  "success",
-		Message: "Task updated successfully",
-		Data:    task,
-	})
-}
-
-// DeleteTaskHandler deletes a task by ID.
-func (hc *HandlerContext) DeleteTaskHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	taskIDStr, exists := vars["id"]
-	if !exists {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Task ID is required",
-		})
-		return
-	}
-
-	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		RespondJSON(w, http.StatusBadRequest, Response{
-			Status:  "error",
-			Message: "Invalid Task ID",
-		})
-		return
-	}
-
-	// Get user ID from context
-	userID, ok := r.Context().Value(ContextUserKey).(int)
-	if !ok {
-		RespondJSON(w, http.StatusInternalServerError, Response{
-			Status:  "error",
-			Message: "Could not retrieve user from context",
-		})
-		return
-	}
-
-	err = hc.Store.DeleteTask(taskID, userID)
-	if err != nil {
-		RespondJSON(w, http.StatusNotFound, Response{
-			Status:  "error",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	RespondJSON(w, http.StatusOK, Response{
-		Status:  "success",
-		Message: "Task deleted successfully",
-	})
-}
-
-// LoggingMiddleware logs incoming HTTP requests.
-func LoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		startTime := time.Now()
-		log.Printf("Started %s %s", r.Method, r.RequestURI)
-
-		next.ServeHTTP(w, r)
-
-		duration := time.Since(startTime)
-		log.Printf("Completed %s in %v", r.RequestURI, duration)
-	})
-}
-
-// AuthMiddleware authenticates requests using tokens.
-func (hc *HandlerContext) AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get the Authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			RespondJSON(w, http.StatusUnauthorized, Response{
-				Status:  "error",
-				Message: "Missing Authorization header",
-			})
-			return
-		}
-
-		// Check if the header is in the correct format
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-			RespondJSON(w, http.StatusUnauthorized, Response{
-				Status:  "error",
-				Message: "Invalid Authorization header format",
-			})
-			return
-		}
-
-		token := parts[1]
-
-		// Validate token
-		hc.Store.tokenMux.RLock()
-		userID, exists := hc.Store.tokenStore[token]
-		hc.Store.tokenMux.RUnlock()
-		if !exists {
-			RespondJSON(w, http.StatusUnauthorized, Response{
-				Status:  "error",
-				Message: "Invalid or expired token",
-			})
-			return
-		}
-
-		// Add user ID to context
-		ctx := context.WithValue(r.Context(), ContextUserKey, userID)
-		r = r.WithContext(ctx)
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-// RespondJSON sends a JSON response with the given status code and payload.
-func RespondJSON(w http.ResponseWriter, statusCode int, payload Response) {
-	response, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "JSON Marshalling Error", http.StatusInternalServerError)
+		http.Error(w, "JSON encoding error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
+	w.WriteHeader(status)
 	w.Write(response)
 }
 
-// NotFoundHandler handles undefined routes.
-func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
-	RespondJSON(w, http.StatusNotFound, Response{
-		Status:  "error",
-		Message: "Endpoint not found",
+// respondError sends an error response in JSON
+func respondError(w http.ResponseWriter, status int, message string) {
+	respondJSON(w, status, map[string]string{"error": message})
+}
+
+// ---------------------- Sample Data Initialization ----------------------
+
+// initializeSampleData adds some sample books and users to the store
+func initializeSampleData(bs *BookService, us *UserService) {
+	// Sample Books
+	bs.AddBook(Book{
+		Title:         "The Great Gatsby",
+		Author:        "F. Scott Fitzgerald",
+		PublishedYear: 1925,
+		ISBN:          "9780743273565",
+	})
+	bs.AddBook(Book{
+		Title:         "1984",
+		Author:        "George Orwell",
+		PublishedYear: 1949,
+		ISBN:          "9780451524935",
+	})
+	bs.AddBook(Book{
+		Title:         "To Kill a Mockingbird",
+		Author:        "Harper Lee",
+		PublishedYear: 1960,
+		ISBN:          "9780061120084",
+	})
+
+	// Sample Users
+	us.AddUser(User{
+		Name:  "Alice Johnson",
+		Email: "alice@example.com",
+	})
+	us.AddUser(User{
+		Name:  "Bob Smith",
+		Email: "bob@example.com",
+	})
+	us.AddUser(User{
+		Name:  "Charlie Brown",
+		Email: "charlie@example.com",
 	})
 }
 
-// MethodNotAllowedHandler handles invalid HTTP methods.
-func MethodNotAllowedHandler(w http.ResponseWriter, r *http.Request) {
-	RespondJSON(w, http.StatusMethodNotAllowed, Response{
-		Status:  "error",
-		Message: "Method not allowed",
-	})
-}
+// ---------------------- Main Function ----------------------
 
 func main() {
-	// Initialize the in-memory store
 	store := NewStore()
+	bookService := NewBookService(store)
+	userService := NewUserService(store)
+	handler := NewHandler(bookService, userService)
 
-	// Create a default admin user
-	adminUsername := "admin"
-	adminPassword := "admin123"
-	_, err := store.AddUser(adminUsername, adminPassword)
-	if err != nil {
-		log.Fatalf("Failed to create admin user: %v", err)
-	}
+	// Initialize sample data
+	initializeSampleData(bookService, userService)
 
-	// Initialize the handler context
-	hc := &HandlerContext{
-		Store: store,
-	}
-
-	// Initialize the router
-	router := mux.NewRouter().StrictSlash(true)
-
-	// Apply Logging Middleware globally
-	router.Use(LoggingMiddleware)
-
-	// Public Routes
-	router.HandleFunc("/register", hc.RegisterHandler).Methods("POST")
-	router.HandleFunc("/login", hc.LoginHandler).Methods("POST")
-
-	// Protected Routes
-	protected := router.PathPrefix("/api").Subrouter()
-	protected.Use(hc.AuthMiddleware)
-
-	// Task Routes
-	protected.HandleFunc("/tasks", hc.CreateTaskHandler).Methods("POST")
-	protected.HandleFunc("/tasks", hc.GetAllTasksHandler).Methods("GET")
-	protected.HandleFunc("/tasks/{id}", hc.GetTaskHandler).Methods("GET")
-	protected.HandleFunc("/tasks/{id}", hc.UpdateTaskHandler).Methods("PUT")
-	protected.HandleFunc("/tasks/{id}", hc.DeleteTaskHandler).Methods("DELETE")
-
-	// Handle undefined routes
-	router.NotFoundHandler = http.HandlerFunc(NotFoundHandler)
-	router.MethodNotAllowedHandler = http.HandlerFunc(MethodNotAllowedHandler)
-
-	// Start the server
-	port := getEnv("PORT", ServerPort)
-	log.Printf("Server is running on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, router))
+	// Start HTTP server
+	fmt.Println("Starting server on :8080")
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
 
-// getEnv retrieves the value of the environment variable named by the key.
-// It returns the value, or defaultVal if the variable is not present.
-func getEnv(key, defaultVal string) string {
-	val, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultVal
+// ---------------------- Additional Functions ----------------------
+
+// You can add more functions, methods, and types below to expand the functionality.
+// For example, adding search functionality, pagination, authentication, etc.
+
+// SearchBooks allows searching books by title or author
+func (h *Handler) searchBooks(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		respondError(w, http.StatusBadRequest, "Missing search query")
+		return
 	}
-	return val
+	books := h.bookService.ListBooks()
+	matched := []Book{}
+	for _, book := range books {
+		if strings.Contains(strings.ToLower(book.Title), strings.ToLower(query)) ||
+			strings.Contains(strings.ToLower(book.Author), strings.ToLower(query)) {
+			matched = append(matched, book)
+		}
+	}
+	respondJSON(w, http.StatusOK, matched)
 }
+
+// Implement other features as needed to expand the codebase
