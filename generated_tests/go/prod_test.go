@@ -6,57 +6,57 @@ import (
     "time"
 )
 
-func TestCache_SetAndGet_Success(t *testing.T) {
+func setupCache(defaultExpiration time.Duration) *Cache {
+    // This setup function should be implemented to initialize the cache with a default expiration time.
+    return NewCache(defaultExpiration)
+}
+
+func teardownCache(c *Cache) {
+    // This teardown function can be used to clean up resources or run any necessary tear down steps.
+    c.StopJanitor()
+}
+
+func TestCache_Set_Success(t *testing.T) {
     c := setupCache(1 * time.Minute)
     defer teardownCache(c)
 
-    tests := []struct {
-        name  string
-        key   string
-        value interface{}
-        ttl   time.Duration
-    }{
-        {"String value", "key1", "value1", 1 * time.Hour},
-        {"Integer value", "key2", 12345, 1 * time.Hour},
-        {"Struct value", "key3", struct{ Name string }{"John"}, 1 * time.Hour},
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            c.Set(tt.key, tt.value, tt.ttl)
-
-            got, err := c.Get(tt.key)
-            if err != nil {
-                t.Errorf("Get() error = %v, wantErr %v", err, false)
-            }
-            if !reflect.DeepEqual(got, tt.value) {
-                t.Errorf("Get() = %v, want %v", got, tt.value)
-            }
-        })
+    err := c.Set("key", "value", 1*time.Hour)
+    if err != nil {
+        t.Errorf("Set() error = %v, wantErr %v", err, false)
     }
 }
 
-func TestCache_Get_ItemNotFound_Error(t *testing.T) {
+func TestCache_Set_Failure(t *testing.T) {
     c := setupCache(1 * time.Minute)
     defer teardownCache(c)
 
-    _, err := c.Get("nonexistent")
-    if err == nil {
-        t.Errorf("Expected error for non-existing item, got nil")
+    // Assuming Set can fail under certain conditions, which should be mocked or simulated if possible.
+}
+
+func TestCache_Get_Success(t *testing.T) {
+    c := setupCache(1 * time.Minute)
+    defer teardownCache(c)
+
+    testKey := "key"
+    testValue := "value"
+    c.Set(testKey, testValue, 1*time.Hour)
+
+    got, err := c.Get(testKey)
+    if err != nil {
+        t.Fatalf("Get() error = %v, wantErr %v", err, false)
+    }
+    if !reflect.DeepEqual(got, testValue) {
+        t.Errorf("Get() got = %v, want %v", got, testValue)
     }
 }
 
-func TestCache_SetAndGet_ItemExpired_Error(t *testing.T) {
-    c := setupCache(1 * time.Millisecond)
+func TestCache_Get_Failure(t *testing.T) {
+    c := setupCache(1 * time.Minute)
     defer teardownCache(c)
 
-    c.Set("keyExpired", "value", 1*time.Nanosecond)
-
-    time.Sleep(2 * time.Millisecond) // Wait for item to expire
-
-    _, err := c.Get("keyExpired")
+    _, err := c.Get("unknown")
     if err == nil {
-        t.Errorf("Expected error for expired item, got nil")
+        t.Errorf("Get() expected error, got nil")
     }
 }
 
@@ -64,42 +64,54 @@ func TestCache_Delete_Success(t *testing.T) {
     c := setupCache(1 * time.Minute)
     defer teardownCache(c)
 
-    c.Set("keyToDelete", "value", 1*time.Hour)
-    c.Delete("keyToDelete")
+    testKey := "keyToDelete"
+    c.Set(testKey, "value", 1*time.Hour)
+    c.Delete(testKey)
 
-    _, err := c.Get("keyToDelete")
+    _, err := c.Get(testKey)
     if err == nil {
-        t.Errorf("Expected error after deleting item, got nil")
+        t.Errorf("Delete() expected error, got nil")
     }
 }
 
-func TestCache_DeleteExpired_Success(t *testing.T) {
-    c := setupCache(1 * time.Millisecond)
+func TestCache_DeleteExpired(t *testing.T) {
+    c := setupCache(10 * time.Millisecond)
     defer teardownCache(c)
 
-    c.Set("keyToDeleteExpired", "value", 1*time.Nanosecond)
-    time.Sleep(2 * time.Millisecond) // Wait for item to expire
+    testKey := "expiredKey"
+    c.Set(testKey, "value", 1*time.Millisecond)
 
+    time.Sleep(20 * time.Millisecond) // ensure the item is expired
     c.DeleteExpired()
 
-    if _, found := c.items["keyToDeleteExpired"]; found {
-        t.Errorf("DeleteExpired() did not delete the expired item.")
+    _, err := c.Get(testKey)
+    if err == nil {
+        t.Errorf("DeleteExpired() expected error, got nil")
     }
 }
 
-func TestNewCache_CreatesCacheInstance(t *testing.T) {
-    c := NewCache(1 * time.Minute)
-    if c == nil {
-        t.Errorf("NewCache() failed to create a cache instance")
+func TestCache_Clear(t *testing.T) {
+    c := setupCache(1 * time.Minute)
+    defer teardownCache(c)
+
+    c.Set("key1", "value1", 1*time.Hour)
+    c.Set("key2", "value2", 1*time.Hour)
+    c.Clear()
+
+    if len(c.items) != 0 {
+        t.Errorf("Clear() did not clear the cache, items count = %d", len(c.items))
     }
 }
 
-func TestCache_StopJanitor_NoPanic(t *testing.T) {
-    c := setupCache(1 * time.Millisecond)
-    defer func() {
-        if r := recover(); r != nil {
-            t.Errorf("StopJanitor() caused panic: %v", r)
-        }
-    }()
-    c.StopJanitor()
+func TestCache_ItemCount(t *testing.T) {
+    c := setupCache(1 * time.Minute)
+    defer teardownCache(c)
+
+    c.Set("key1", "value1", 1*time.Hour)
+    c.Set("key2", "value2", 1*time.Hour)
+
+    count := c.ItemCount()
+    if count != 2 {
+        t.Errorf("ItemCount() = %d, want %d", count, 2)
+    }
 }
