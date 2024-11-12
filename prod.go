@@ -331,3 +331,5 @@ func runJanitor(c *Cache, ci time.Duration) {
 	c.janitor = j
 	go j.Run(c)
 }
+
+
