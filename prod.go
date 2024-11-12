@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/gorilla/mux"
 )
 
