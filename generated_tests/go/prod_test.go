@@ -1,100 +1,109 @@
 package cache
 
 import (
-    "reflect"
     "testing"
     "time"
 )
 
-func TestNewCache(t *testing.T) {
-    cleanupInterval := 1 * time.Millisecond
+func TestCache_NewCache_NonNil(t *testing.T) {
+    cleanupInterval := 50 * time.Millisecond
     cache := NewCache(cleanupInterval)
     defer cache.StopJanitor()
 
     if cache == nil {
-        t.Error("NewCache() should not return nil")
+        t.Fatal("NewCache() returned nil, expected non-nil Cache instance")
     }
+}
+
+func TestCache_NewCache_EmptyOnInit(t *testing.T) {
+    cache := NewCache(50 * time.Millisecond)
+    defer cache.StopJanitor()
 
     if len(cache.items) != 0 {
-        t.Errorf("New cache should be empty, got %d items", len(cache.items))
+        t.Fatalf("New cache expected to be empty, got %d items", len(cache.items))
     }
 }
 
-func TestCache_SetAndGet(t *testing.T) {
+func TestCache_SetAndGet_Success(t *testing.T) {
     cache := NewCache(100 * time.Millisecond)
     defer cache.StopJanitor()
 
-    key := "key"
-    value := "value"
-    cache.Set(key, value, 0) // No expiration
+    key := "testKey"
+    expectedValue := "testValue"
+    cache.Set(key, expectedValue, 0) // No expiration
 
-    got, err := cache.Get(key)
+    actualValue, err := cache.Get(key)
     if err != nil {
-        t.Errorf("Get() unexpected error: %v", err)
+        t.Fatalf("Get() returned unexpected error: %v", err)
     }
-    if !reflect.DeepEqual(got, value) {
-        t.Errorf("Get() = %v, want %v", got, value)
+    if actualValue != expectedValue {
+        t.Errorf("Get() = %v, want %v", actualValue, expectedValue)
     }
 }
 
-func TestCache_Get_ItemNotFound(t *testing.T) {
+func TestCache_Get_KeyNotFound(t *testing.T) {
     cache := NewCache(100 * time.Millisecond)
     defer cache.StopJanitor()
 
-    _, err := cache.Get("nonexistent")
+    _, err := cache.Get("nonexistentKey")
     if err == nil {
-        t.Error("Get() expected error for nonexistent item")
+        t.Error("Expected an error for a nonexistent key, got nil")
     }
 }
 
-func TestCache_Get_ItemExpired(t *testing.T) {
+func TestCache_Get_KeyExpired(t *testing.T) {
     cache := NewCache(1 * time.Millisecond)
     defer cache.StopJanitor()
 
-    key := "key"
+    key := "expiringKey"
     cache.Set(key, "value", 1*time.Nanosecond)
 
-    time.Sleep(2 * time.Millisecond) // Ensure expiration
+    time.Sleep(2 * time.Millisecond) // Ensure the item is expired
 
     _, err := cache.Get(key)
     if err == nil {
-        t.Error("Get() expected error for expired item")
+        t.Error("Expected an error for an expired key, got nil")
     }
 }
 
-func TestCache_Delete(t *testing.T) {
+func TestCache_Delete_KeyExists(t *testing.T) {
     cache := NewCache(100 * time.Millisecond)
     defer cache.StopJanitor()
 
-    key := "key"
-    cache.Set(key, "value", 0)
+    key := "keyToDelete"
+    cache.Set(key, "value", 0) // No expiration
     cache.Delete(key)
 
     _, err := cache.Get(key)
     if err == nil {
-        t.Errorf("Delete() failed, item %s still exists", key)
+        t.Errorf("Expected an error after deleting key %s, got nil", key)
     }
 }
 
-func TestCache_DeleteExpired(t *testing.T) {
+func TestCache_DeleteExpired_ItemsExist(t *testing.T) {
     cache := NewCache(1 * time.Millisecond)
     defer cache.StopJanitor()
 
-    key := "key"
+    key := "expiringKey"
     cache.Set(key, "value", 1*time.Nanosecond)
 
-    time.Sleep(2 * time.Millisecond) // Wait for item to expire
+    time.Sleep(2 * time.Millisecond) // Ensure the item is expired
 
     cache.DeleteExpired()
 
     if _, exists := cache.items[key]; exists {
-        t.Errorf("DeleteExpired() failed, expired item %s still exists", key)
+        t.Errorf("Expected expired item %s to be deleted, but it still exists", key)
     }
 }
 
-func TestCache_StopJanitor(t *testing.T) {
+func TestCache_StopJanitor_NoPanic(t *testing.T) {
     cache := NewCache(1 * time.Millisecond)
 
-    // Not an ideal test, just ensures calling StopJanitor doesn't result in panic
+    defer func() {
+        if r := recover(); r != nil {
+            t.Errorf("StopJanitor() caused panic: %v", r)
+        }
+    }()
+
     cache.StopJanitor()
 }
