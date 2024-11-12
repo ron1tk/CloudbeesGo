@@ -106,6 +106,7 @@ func (c *Cache) DeleteExpired() {
     }
 }
 
+
 // runJanitor initializes and starts the janitor.
 func runJanitor(c *Cache, ci time.Duration) {
     j := &janitor{
