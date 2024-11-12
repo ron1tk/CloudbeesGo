@@ -1,65 +1,81 @@
 package main
 
 import (
-	"reflect"
 	"testing"
 	"time"
 )
 
-func TestCache_Set_Get_Delete(t *testing.T) {
-	c := setupCache(1 * time.Minute)
+func TestCache_Set_Get_SuccessCases(t *testing.T) {
+	c := setupCache(10 * time.Minute)
 	defer teardownCache(c)
 
-	type args struct {
+	tests := []struct {
+		name  string
 		key   string
 		value interface{}
 		ttl   time.Duration
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
 	}{
-		{"Set and Get string value", args{"key1", "value1", 1 * time.Hour}, false},
-		{"Set and Get integer value", args{"key2", 12345, 1 * time.Hour}, false},
-		{"Set and Get struct value", args{"key3", struct{ Name string }{"John"}, 1 * time.Hour}, false},
-		{"Set with negative ttl", args{"key4", "value4", -1 * time.Hour}, true},
+		{"Set and Get string value", "key1", "value1", 10 * time.Minute},
+		{"Set and Get integer value", "key2", 12345, 10 * time.Minute},
+		{"Set and Get struct value", "key3", struct{ Name string }{"John"}, 10 * time.Minute},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := c.Set(tt.args.key, tt.args.value, tt.args.ttl)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Cache.Set() error = %v, wantErr %v", err, tt.wantErr)
+			err := c.Set(tt.key, tt.value, tt.ttl)
+			if err != nil {
+				t.Errorf("Cache.Set() error = %v, wantErr %v", err, false)
 			}
 
-			got, err := c.Get(tt.args.key)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Cache.Get() error = %v, wantErr %v", err, tt.wantErr)
+			got, err := c.Get(tt.key)
+			if err != nil {
+				t.Errorf("Cache.Get() error = %v, wantErr %v", err, false)
 			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.args.value) {
-				t.Errorf("Cache.Get() = %v, want %v", got, tt.args.value)
+			if !reflect.DeepEqual(got, tt.value) {
+				t.Errorf("Cache.Get() = %v, want %v", got, tt.value)
 			}
 		})
 	}
-
-	// Test Delete separately to ensure setup is correct
-	t.Run("Delete existing key", func(t *testing.T) {
-		keyToDelete := "keyToDelete"
-		err := c.Set(keyToDelete, "valueToDelete", 1*time.Hour)
-		if err != nil {
-			t.Fatalf("Setup failed for delete test: %v", err)
-		}
-
-		c.Delete(keyToDelete)
-		_, err = c.Get(keyToDelete)
-		if err == nil {
-			t.Errorf("Expected error after deleting item, got nil")
-		}
-	})
 }
 
-func TestCache_DeleteExpired(t *testing.T) {
+func TestCache_Set_NegativeTTL(t *testing.T) {
+	c := setupCache(10 * time.Minute)
+	defer teardownCache(c)
+
+	err := c.Set("keyNegativeTTL", "value", -1*time.Minute)
+	if err == nil {
+		t.Error("Cache.Set() with negative TTL did not return error, wantErr true")
+	}
+}
+
+func TestCache_Get_NonExistentKey(t *testing.T) {
+	c := setupCache(10 * time.Minute)
+	defer teardownCache(c)
+
+	_, err := c.Get("nonExistentKey")
+	if err == nil {
+		t.Error("Cache.Get() for non-existent key did not return error, wantErr true")
+	}
+}
+
+func TestCache_Delete(t *testing.T) {
+	c := setupCache(10 * time.Minute)
+	defer teardownCache(c)
+
+	key := "keyToDelete"
+	err := c.Set(key, "valueToDelete", 10*time.Minute)
+	if err != nil {
+		t.Fatalf("Failed to set up for delete test: %v", err)
+	}
+
+	c.Delete(key)
+	_, err = c.Get(key)
+	if err == nil {
+		t.Error("Cache.Get() after delete did not return error, wantErr true")
+	}
+}
+
+func TestCache_DeleteExpired_Success(t *testing.T) {
 	c := setupCache(1 * time.Millisecond)
 	defer teardownCache(c)
 
@@ -68,8 +84,9 @@ func TestCache_DeleteExpired(t *testing.T) {
 
 	c.DeleteExpired()
 
-	if _, found := c.items["keyToDeleteExpired"]; found {
-		t.Errorf("DeleteExpired() did not delete the expired item.")
+	_, found := c.items["keyToDeleteExpired"]
+	if found {
+		t.Error("DeleteExpired() did not delete the expired item.")
 	}
 }
 
@@ -82,18 +99,18 @@ func TestCache_Expiry(t *testing.T) {
 
 	_, err := c.Get("keyExpireSoon")
 	if err == nil {
-		t.Errorf("Expected error for expired item, got nil")
+		t.Error("Expected error for expired item, got nil")
 	}
 }
 
 func TestNewCache(t *testing.T) {
-	c := NewCache(1 * time.Minute)
+	c := NewCache(10 * time.Minute)
 	if c == nil {
-		t.Errorf("NewCache() failed to create a cache instance")
+		t.Error("NewCache() failed to create a cache instance")
 	}
 }
 
-func TestCache_StopJanitor(t *testing.T) {
+func TestCache_StopJanitor_NoPanic(t *testing.T) {
 	c := setupCache(1 * time.Millisecond)
 	defer func() {
 		if r := recover(); r != nil {
