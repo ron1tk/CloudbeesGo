@@ -1,100 +1,121 @@
+// prod_test.go
 package cache
 
 import (
+    "errors"
     "reflect"
     "testing"
     "time"
 )
 
-func TestNewCache(t *testing.T) {
-    cleanupInterval := 1 * time.Millisecond
-    cache := NewCache(cleanupInterval)
+func TestCache_SetWithExpiration(t *testing.T) {
+    // Provide both cleanupInterval and defaultDuration
+    cache := NewCache(10*time.Millisecond, 0)
     defer cache.StopJanitor()
 
-    if cache == nil {
-        t.Error("NewCache() should not return nil")
-    }
+    key := "expiringKey"
+    value := "expiringValue"
+    expiration := 5 * time.Millisecond
+    cache.Set(key, value, expiration)
 
-    if len(cache.items) != 0 {
-        t.Errorf("New cache should be empty, got %d items", len(cache.items))
+    time.Sleep(6 * time.Millisecond) // Wait for the item to expire
+
+    _, err := cache.Get(key)
+    if !errors.Is(err, ErrItemExpired) {
+        t.Errorf("Expected error %v for expired item, got %v", ErrItemExpired, err)
     }
 }
 
-func TestCache_SetAndGet(t *testing.T) {
-    cache := NewCache(100 * time.Millisecond)
+func TestCache_SetAndGetConcurrently(t *testing.T) {
+    cache := NewCache(100*time.Millisecond, 0)
     defer cache.StopJanitor()
 
-    key := "key"
-    value := "value"
-    cache.Set(key, value, 0) // No expiration
+    key := "concurrentKey"
+    value := "concurrentValue"
+
+    go cache.Set(key, value, 0)
+
+    time.Sleep(1 * time.Millisecond) // Give some time for the Set operation
 
     got, err := cache.Get(key)
     if err != nil {
-        t.Errorf("Get() unexpected error: %v", err)
+        t.Errorf("Concurrent Get() unexpected error: %v", err)
     }
     if !reflect.DeepEqual(got, value) {
-        t.Errorf("Get() = %v, want %v", got, value)
+        t.Errorf("Concurrent Get() = %v, want %v", got, value)
     }
 }
 
-func TestCache_Get_ItemNotFound(t *testing.T) {
-    cache := NewCache(100 * time.Millisecond)
-    defer cache.StopJanitor()
-
-    _, err := cache.Get("nonexistent")
-    if err == nil {
-        t.Error("Get() expected error for nonexistent item")
-    }
-}
-
-func TestCache_Get_ItemExpired(t *testing.T) {
-    cache := NewCache(1 * time.Millisecond)
+func TestCache_ReplaceExistingItem(t *testing.T) {
+    cache := NewCache(100*time.Millisecond, 0)
     defer cache.StopJanitor()
 
     key := "key"
-    cache.Set(key, "value", 1*time.Nanosecond)
+    firstValue := "firstValue"
+    secondValue := "secondValue"
+    cache.Set(key, firstValue, 0)
+    cache.Set(key, secondValue, 0) // Replace
 
-    time.Sleep(2 * time.Millisecond) // Ensure expiration
-
-    _, err := cache.Get(key)
-    if err == nil {
-        t.Error("Get() expected error for expired item")
+    got, err := cache.Get(key)
+    if err != nil {
+        t.Errorf("Get() after replace unexpected error: %v", err)
+    }
+    if !reflect.DeepEqual(got, secondValue) {
+        t.Errorf("Get() after replace = %v, want %v", got, secondValue)
     }
 }
 
-func TestCache_Delete(t *testing.T) {
-    cache := NewCache(100 * time.Millisecond)
+func TestCache_DeleteNonexistent(t *testing.T) {
+    cache := NewCache(100*time.Millisecond, 0)
     defer cache.StopJanitor()
 
-    key := "key"
-    cache.Set(key, "value", 0)
-    cache.Delete(key)
+    nonexistentKey := "nonexistentKey"
+    cache.Delete(nonexistentKey) // Should not panic or error
 
-    _, err := cache.Get(key)
-    if err == nil {
-        t.Errorf("Delete() failed, item %s still exists", key)
+    _, err := cache.Get(nonexistentKey)
+    if !errors.Is(err, ErrItemNotFound) {
+        t.Errorf("Delete() nonexistent item, expected %v, got %v", ErrItemNotFound, err)
     }
 }
 
-func TestCache_DeleteExpired(t *testing.T) {
-    cache := NewCache(1 * time.Millisecond)
+func TestCache_MultipleOperations(t *testing.T) {
+    cache := NewCache(100*time.Millisecond, 0)
     defer cache.StopJanitor()
 
-    key := "key"
-    cache.Set(key, "value", 1*time.Nanosecond)
+    key1 := "key1"
+    value1 := "value1"
+    key2 := "key2"
+    value2 := "value2"
 
-    time.Sleep(2 * time.Millisecond) // Wait for item to expire
+    cache.Set(key1, value1, 0)
+    cache.Set(key2, value2, 0)
 
-    cache.DeleteExpired()
+    cache.Delete(key1)
 
-    if _, exists := cache.items[key]; exists {
-        t.Errorf("DeleteExpired() failed, expired item %s still exists", key)
+    _, err := cache.Get(key1)
+    if !errors.Is(err, ErrItemNotFound) {
+        t.Errorf("Expected %v error for key1, got %v", ErrItemNotFound, err)
+    }
+
+    got, err := cache.Get(key2)
+    if err != nil {
+        t.Errorf("Unexpected error for key2: %v", err)
+    }
+    if got != value2 {
+        t.Errorf("Expected value2 for key2, got %v", got)
     }
 }
 
-func TestCache_StopJanitor(t *testing.T) {
-    cache := NewCache(1 * time.Millisecond)
+func TestCache_Clear(t *testing.T) {
+    cache := NewCache(100*time.Millisecond, 0)
+    defer cache.StopJanitor()
 
-    // Not an ideal test, just ensures calling StopJanitor doesn't result in panic
-    cache.StopJanitor()
+    cache.Set("key1", "value1", 0)
+    cache.Set("key2", "value2", 0)
+
+    cache.Clear()
+
+    if len(cache.items) != 0 {
+        t.Errorf("Clear() failed, expected cache to be empty, got %d items", len(cache.items))
+    }
 }
