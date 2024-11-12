@@ -395,7 +395,8 @@ Generate only the test code without any explanations or notes."""
             )
         elif language.lower() == 'go':
             # Include any Go-specific setup code here, if necessary
-            header = "package test\n\n"
+            test_dir = Path(file_name).parent
+            test_file_name = f"{Path(file_name).stem}_test.go"
 
         try:
             with open(test_file, 'w', encoding='utf-8') as f:
