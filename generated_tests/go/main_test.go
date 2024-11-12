@@ -5,77 +5,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
-
-// Mock DB
-type MockDB struct {
-	mock.Mock
-}
-
-func (m *MockDB) Create(value interface{}) *gorm.DB {
-	args := m.Called(value)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) First(out interface{}, where ...interface{}) *gorm.DB {
-	args := m.Called(out, where)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Save(value interface{}) *gorm.DB {
-	args := m.Called(value)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Delete(value interface{}, where ...interface{}) *gorm.DB {
-	args := m.Called(value, where)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Model(value interface{}) *gorm.DB {
-	args := m.Called(value)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Where(query interface{}, args ...interface{}) *gorm.DB {
-	call := m.Called(query, args)
-	return call.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Limit(limit int) *gorm.DB {
-	args := m.Called(limit)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Offset(offset int) *gorm.DB {
-	args := m.Called(offset)
-	return args.Get(0).(*gorm.DB)
-}
-
-func (m *MockDB) Find(out interface{}, where ...interface{}) *gorm.DB {
-	args := m.Called(out, where)
-	return args.Get(0).(*gorm.DB)
-}
-
-func setup() *App {
-	app := &App{Router: mux.NewRouter(), DB: new(MockDB), Validator: validator.New(), JWTSecret: "testsecret", TokenExpiry: time.Minute * 60}
-	app.initializeRoutes()
-	return app
-}
 
 func TestHealthCheckHandler(t *testing.T) {
 	app := setup()
@@ -85,7 +23,7 @@ func TestHealthCheckHandler(t *testing.T) {
 	checkResponseCode(t, http.StatusOK, response.Code)
 	var m map[string]string
 	json.Unmarshal(response.Body.Bytes(), &m)
-	assert.Equal(t, "healthy", m["status"])
+	assert.Equal(t, "healthy", m["status"], "Expected health check status to be 'healthy'")
 }
 
 func TestLoginHandler_Success(t *testing.T) {
@@ -136,6 +74,7 @@ func TestCreateUserHandler_Success(t *testing.T) {
 	response := executeRequest(req, app)
 
 	checkResponseCode(t, http.StatusCreated, response.Code)
+	mockDB.AssertExpectations(t)
 }
 
 func TestCreateUserHandler_Failure(t *testing.T) {
@@ -166,48 +105,76 @@ func TestGetUserHandler_NotFound(t *testing.T) {
 	response := executeRequest(req, app)
 
 	checkResponseCode(t, http.StatusNotFound, response.Code)
+	mockDB.AssertExpectations(t)
 }
 
-func executeRequest(req *http.Request, app *App) *httptest.ResponseRecorder {
-	recorder := httptest.NewRecorder()
-	app.Router.ServeHTTP(recorder, req)
-	return recorder
-}
+// Additional Test Cases
 
-func checkResponseCode(t *testing.T, expected, actual int) {
-	if expected != actual {
-		t.Errorf("Expected response code %d. Got %d\n", expected, actual)
-	}
-}
+func TestUpdateUserHandler_Success(t *testing.T) {
+	app := setup()
 
-func generateTestToken(app *App) string {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": "admin",
-		"exp":      time.Now().Add(time.Minute * 5).Unix(),
-	})
-	tokenString, _ := token.SignedString([]byte(app.JWTSecret))
-	return tokenString
-}
+	mockDB := app.DB.(*MockDB)
+	mockDB.On("Model", mock.AnythingOfType("*main.User")).Return(&gorm.DB{}).Once()
+	mockDB.On("Where", "id = ?", mock.Anything).Return(&gorm.DB{}).Once()
+	mockDB.On("Save", mock.AnythingOfType("*main.User")).Return(&gorm.DB{Error: nil})
 
-func TestMain(m *testing.M) {
-	// Setup test environment
-	cfg = Config{
-		ServerPort:      "8080",
-		JWTSecret:       "testsecret",
-		RateLimit:       "5-S",
-		DatabasePath:    ":memory:",
-		LogLevel:        "panic",
-		TokenExpiryMins: 60,
+	userUpdate := UserInput{
+		FirstName: "UpdatedName",
 	}
 
-	app := App{}
-	err := app.Initialize()
-	if err != nil {
-		fmt.Println("Failed to initialize the test application.")
-		return
+	body, _ := json.Marshal(userUpdate)
+	req, _ := http.NewRequest("PUT", "/api/users/123", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", generateTestToken(app)))
+	response := executeRequest(req, app)
+
+	checkResponseCode(t, http.StatusOK, response.Code)
+	mockDB.AssertExpectations(t)
+}
+
+func TestUpdateUserHandler_Failure_NotFound(t *testing.T) {
+	app := setup()
+
+	mockDB := app.DB.(*MockDB)
+	mockDB.On("Model", mock.AnythingOfType("*main.User")).Return(&gorm.DB{}).Once()
+	mockDB.On("Where", "id = ?", mock.Anything).Return(&gorm.DB{Error: gorm.ErrRecordNotFound})
+
+	userUpdate := UserInput{
+		FirstName: "NonExistent",
 	}
 
-	code := m.Run()
+	body, _ := json.Marshal(userUpdate)
+	req, _ := http.NewRequest("PUT", "/api/users/999", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", generateTestToken(app)))
+	response := executeRequest(req, app)
 
-	os.Exit(code)
+	checkResponseCode(t, http.StatusNotFound, response.Code)
+	mockDB.AssertExpectations(t)
+}
+
+func TestDeleteUserHandler_Success(t *testing.T) {
+	app := setup()
+
+	mockDB := app.DB.(*MockDB)
+	mockDB.On("Delete", mock.AnythingOfType("*main.User"), mock.Anything).Return(&gorm.DB{Error: nil})
+
+	req, _ := http.NewRequest("DELETE", "/api/users/123", nil)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", generateTestToken(app)))
+	response := executeRequest(req, app)
+
+	checkResponseCode(t, http.StatusOK, response.Code)
+	mockDB.AssertExpectations(t)
+}
+
+func TestDeleteUserHandler_Failure_NotFound(t *testing.T) {
+	app := setup()
+
+	mockDB := app.DB.(*MockDB)
+	mockDB.On("Delete", mock.AnythingOfType("*main.User"), mock.Anything).Return(&gorm.DB{Error: gorm.ErrRecordNotFound})
+
+	req, _ := http.NewRequest("DELETE", "/api/users/999", nil)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", generateTestToken(app)))
+	response := executeRequest(req, app)
+
+	checkResponseCode(t, http.StatusNotFound, response.Code)
+	mockDB.AssertExpectations(t)
 }
